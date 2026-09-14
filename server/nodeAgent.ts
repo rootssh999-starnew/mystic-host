@@ -40,6 +40,12 @@ export function nodeLogs(name: string) {
 export function nodeStats(name: string) {
   return request<Record<string, unknown>>(`/v1/servers/${encodeURIComponent(name)}/stats`);
 }
+export function nodeBackups(name: string) {
+  return request<{ backups: Array<{ name: string; bytes: number; createdAt: string }> }>(`/v1/servers/${encodeURIComponent(name)}/backups`);
+}
+export function nodeCreateBackup(name: string) {
+  return request<{ name: string; bytes: number; createdAt: string }>(`/v1/servers/${encodeURIComponent(name)}/backups`, { method: "POST" });
+}
 export function nodeUploadFile(name: string, filePath: string, data: Buffer) {
   return request<{ success: boolean; path: string; size: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, {
     method: "POST",

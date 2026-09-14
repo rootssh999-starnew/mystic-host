@@ -2,7 +2,7 @@
 import http from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, rm, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, rm, readdir, readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const exec = promisify(execFile);
@@ -100,6 +100,24 @@ async function handle(req, res) {
   if (req.method === "GET" && parts[3] === "logs") {
     const output = await docker(["logs", "--tail", "200", container]);
     return send(res, 200, { logs: output });
+  }
+  if (req.method === "GET" && parts[3] === "backups") {
+    const backupDir = path.join(serverRoot, ".backups");
+    const entries = await readdir(backupDir, { withFileTypes: true }).catch(() => []);
+    const backups = await Promise.all(entries.filter((entry) => entry.isFile() && entry.name.endsWith(".tar.gz")).map(async (entry) => {
+      const file = path.join(backupDir, entry.name);
+      const details = await stat(file);
+      return { name: entry.name, bytes: details.size, createdAt: details.mtime.toISOString() };
+    }));
+    return send(res, 200, { backups });
+  }
+  if (req.method === "POST" && parts[3] === "backups") {
+    const backupDir = path.join(serverRoot, ".backups");
+    await mkdir(backupDir, { recursive: true });
+    const name = `backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz`;
+    await exec("tar", ["-czf", path.join(backupDir, name), "--exclude=.backups", "-C", serverRoot, "."]);
+    const details = await stat(path.join(backupDir, name));
+    return send(res, 201, { name, bytes: details.size, createdAt: details.mtime.toISOString() });
   }
   if (req.method === "POST" && parts[3] === "files") {
     const relative = safeRelativePath(input.path);
