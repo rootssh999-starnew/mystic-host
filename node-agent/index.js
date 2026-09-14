@@ -84,7 +84,7 @@ async function handle(req, res) {
     const cpus = Math.max(0.1, Math.min(Number(input.cpu || 0.5), 4));
     const port = Number(input.port || 0);
     try { await docker(["inspect", container]); return send(res, 409, { error: "Server already exists" }); } catch {}
-    const args = ["run", "-d", "--name", container, "--restart", "unless-stopped", "--memory", `${memory}m`, "--cpus", String(cpus), "-v", `${serverRoot}:/workspace"];
+    const args = ["run", "-d", "--name", container, "--restart", "unless-stopped", "--memory", `${memory}m`, "--cpus", String(cpus), "-v", `${serverRoot}:/workspace`];
     if (Number.isInteger(port) && port > 0 && port < 65536) args.push("-p", `${port}:${port}`);
     args.push(image, "sh", "-c", startup);
     await docker(args);
