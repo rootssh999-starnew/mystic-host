@@ -49,6 +49,9 @@ export function nodeBackups(name: string) {
 export function nodeCreateBackup(name: string) {
   return request<{ name: string; bytes: number; createdAt: string }>(`/v1/servers/${encodeURIComponent(name)}/backups`, { method: "POST" });
 }
+export function nodeRestoreBackup(name: string, backupName: string) {
+  return request<{ success: boolean; name: string }>(`/v1/servers/${encodeURIComponent(name)}/restore`, { method: "POST", body: JSON.stringify({ name: backupName }) });
+}
 export function nodeUploadFile(name: string, filePath: string, data: Buffer) {
   return request<{ success: boolean; path: string; size: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, {
     method: "POST",

@@ -125,6 +125,14 @@ async function handle(req, res) {
     const details = await stat(path.join(backupDir, name));
     return send(res, 201, { name, bytes: details.size, createdAt: details.mtime.toISOString() });
   }
+  if (req.method === "POST" && parts[3] === "restore") {
+    const backupName = safeRelativePath(input.name || "");
+    if (!backupName.startsWith(".backups/") || !backupName.endsWith(".tar.gz")) throw new Error("Invalid backup name");
+    const archive = path.join(serverRoot, backupName);
+    await stat(archive);
+    await exec("tar", ["-xzf", archive, "--strip-components=1", "-C", serverRoot, "--exclude=.backups"]);
+    return send(res, 200, { success: true, name: backupName });
+  }
   if (req.method === "POST" && parts[3] === "files") {
     const relative = safeRelativePath(input.path);
     const target = path.join(serverRoot, relative);
