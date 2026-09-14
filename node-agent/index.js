@@ -145,6 +145,18 @@ async function handle(req, res) {
     }));
     return send(res, 200, { files });
   }
+  if (req.method === "POST" && parts[3] === "databases" && parts.length === 4) {
+    const database = safeName(input.name);
+    const username = safeName(input.username || "app");
+    const password = String(input.password || "");
+    if (password.length < 12) throw new Error("Database password must be at least 12 characters");
+    const dbContainer = `mystic-host-db-${name}-${database}`;
+    const volume = path.join(serverRoot, ".databases", database);
+    await mkdir(volume, { recursive: true });
+    try { await docker(["inspect", dbContainer]); return send(res, 409, { error: "Database already exists" }); } catch {}
+    await docker(["run", "-d", "--name", dbContainer, "--restart", "unless-stopped", "-e", `MYSQL_DATABASE=${database}`, "-e", `MYSQL_USER=${username}`, "-e", `MYSQL_PASSWORD=${password}`, "-e", `MYSQL_ROOT_PASSWORD=${password}`, "-v", `${volume}:/var/lib/mysql`, "mysql:8.4"]);
+    return send(res, 201, { name: database, username, host: dbContainer, port: 3306 });
+  }
   if (req.method === "GET" && parts[3] === "files" && parts.length >= 5) {
     const relative = safeRelativePath(parts.slice(4).join("/"));
     const target = path.join(serverRoot, relative);

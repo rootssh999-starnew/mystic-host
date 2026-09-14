@@ -7,6 +7,8 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { startScheduler } from "../scheduler";
+import { nodeLogs } from "../nodeAgent";
+import { sdk } from "./sdk";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -38,6 +40,19 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  app.get("/api/servers/:name/events", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      if (!user) return res.status(401).end();
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+      const send = async () => {
+        try { const result = await nodeLogs(req.params.name); res.write(`event: logs\ndata: ${JSON.stringify(result)}\n\n`); } catch (error) { res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : "Stream failed" })}\n\n`); }
+      };
+      await send();
+      const timer = setInterval(() => void send(), 2000);
+      req.on("close", () => clearInterval(timer));
+    } catch { res.status(401).end(); }
+  });
   // tRPC API
   app.use(
     "/api/trpc",

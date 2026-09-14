@@ -3,8 +3,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile } from "./nodeAgent";
-import { createAllocation, createLocation, createNode, createPersistentServer, createSchedule, createServerUser, getNode, listAllocations, listEggs, listLocations, listNests, listNodes, listSchedules, listServerUsers, listServers, seedCatalog, updateNodeStatus, updateServerStatus } from "./controlPlane";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile } from "./nodeAgent";
+import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerUsers, listServers, seedCatalog, updateNodeStatus, updateServerStatus } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -75,6 +75,10 @@ export const appRouter = router({
     createSchedule: adminProcedure.input(z.object({ serverId: z.number().int().positive(), name: z.string().min(1).max(100), cron: z.string().min(1).max(100), action: z.enum(["start", "stop", "restart", "command"]), payload: z.string().optional() })).mutation(({ input }) => createSchedule(input)),
     serverUsers: adminProcedure.input(z.object({ serverId: z.number().int().positive() })).query(({ input }) => listServerUsers(input.serverId)),
     createServerUser: adminProcedure.input(z.object({ serverId: z.number().int().positive(), userId: z.number().int().positive(), permissions: z.array(z.string().min(1)).min(1).max(50) })).mutation(({ input }) => createServerUser(input)),
+    databaseHosts: adminProcedure.query(() => listDatabaseHosts()),
+    createDatabaseHost: adminProcedure.input(z.object({ nodeId: z.number().int().positive(), name: z.string().min(1).max(100), hostname: z.string().min(1).max(255), port: z.number().int().min(1).max(65535), username: z.string().min(1).max(100), password: z.string().min(1).max(255) })).mutation(({ input }) => createDatabaseHost(input)),
+    serverDatabases: adminProcedure.input(z.object({ serverId: z.number().int().positive() })).query(({ input }) => listServerDatabases(input.serverId)),
+    createServerDatabase: adminProcedure.input(z.object({ serverId: z.number().int().positive(), hostId: z.number().int().positive(), name: z.string().min(1).max(100), username: z.string().min(1).max(100), password: z.string().min(1).max(255) })).mutation(({ input }) => createServerDatabase(input)),
     nodeConfig: adminProcedure.input(z.object({ nodeId: z.number().int().positive() })).query(async ({ input }) => { const node = await getNode(input.nodeId); return { debug: false, uuid: String(node.id), token: node.daemonToken, api: { host: "0.0.0.0", port: node.daemonPort, ssl: { enabled: node.scheme === "https", cert: `/etc/letsencrypt/live/${node.fqdn}/fullchain.pem`, key: `/etc/letsencrypt/live/${node.fqdn}/privkey.pem` }, upload_limit: 100 }, system: { data: "/var/lib/mystic-host/volumes", sftp: { bind_port: node.sftpPort } }, remote: `${node.scheme}://${node.fqdn}` }; }),
   }),
   node: router({
@@ -105,6 +109,9 @@ export const appRouter = router({
     downloadFile: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), path: z.string().min(1).max(500) }))
       .query(({ input }) => nodeDownloadFile(input.name, input.path)),
+    createDatabase: protectedProcedure
+      .input(z.object({ serverName: z.string().min(2).max(48), name: z.string().min(1).max(48), username: z.string().min(1).max(48), password: z.string().min(12).max(255) }))
+      .mutation(({ input }) => nodeCreateDatabase(input.serverName, input.name, input.username, input.password)),
   }),
   files: router({
     list: protectedProcedure

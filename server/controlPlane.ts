@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
-import { allocations, backups, eggs, locations, nests, nodes, schedules, serverUsers, servers } from "../drizzle/schema";
+import { allocations, backups, databaseHosts, eggs, locations, nests, nodes, schedules, serverDatabases, serverUsers, servers } from "../drizzle/schema";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -157,5 +157,33 @@ export async function createServerUser(input: { serverId: number; userId: number
   if (!db) throw new Error("Database is not available");
   const result = await db.insert(serverUsers).values({ serverId: input.serverId, userId: input.userId, permissionsJson: JSON.stringify(Array.from(new Set(input.permissions))) });
   const rows = await db.select().from(serverUsers).where(eq(serverUsers.id, Number(result[0].insertId))).limit(1);
+  return rows[0];
+}
+
+export async function listDatabaseHosts() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(databaseHosts).orderBy(desc(databaseHosts.id));
+}
+
+export async function createDatabaseHost(input: typeof databaseHosts.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(databaseHosts).values(input);
+  const rows = await db.select().from(databaseHosts).where(eq(databaseHosts.id, Number(result[0].insertId))).limit(1);
+  return rows[0];
+}
+
+export async function listServerDatabases(serverId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(serverDatabases).where(eq(serverDatabases.serverId, serverId)).orderBy(desc(serverDatabases.id));
+}
+
+export async function createServerDatabase(input: typeof serverDatabases.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(serverDatabases).values(input);
+  const rows = await db.select().from(serverDatabases).where(eq(serverDatabases.id, Number(result[0].insertId))).limit(1);
   return rows[0];
 }
