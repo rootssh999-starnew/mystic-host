@@ -78,12 +78,17 @@ async function handle(req, res) {
 
   if (req.method === "POST" && parts.length === 3) {
     const runtime = input.runtime || "nodejs";
-    const image = imageForRuntime(runtime);
+    const image = String(input.image || imageForRuntime(runtime));
+    const startup = String(input.startup || "while true; do sleep 3600; done");
     const memory = Math.max(128, Math.min(Number(input.memoryMb || 512), 8192));
     const cpus = Math.max(0.1, Math.min(Number(input.cpu || 0.5), 4));
+    const port = Number(input.port || 0);
     try { await docker(["inspect", container]); return send(res, 409, { error: "Server already exists" }); } catch {}
-    await docker(["run", "-d", "--name", container, "--restart", "unless-stopped", "--memory", `${memory}m`, "--cpus", String(cpus), "-v", `${serverRoot}:/workspace`, image, "sh", "-c", "while true; do sleep 3600; done"]);
-    return send(res, 201, { ...(await containerInfo(name)), runtime, memoryMb: memory, cpu: cpus });
+    const args = ["run", "-d", "--name", container, "--restart", "unless-stopped", "--memory", `${memory}m`, "--cpus", String(cpus), "-v", `${serverRoot}:/workspace"];
+    if (Number.isInteger(port) && port > 0 && port < 65536) args.push("-p", `${port}:${port}`);
+    args.push(image, "sh", "-c", startup);
+    await docker(args);
+    return send(res, 201, { ...(await containerInfo(name)), runtime, image, startup, memoryMb: memory, cpu: cpus, port: port || null });
   }
   if (req.method === "POST" && parts[3] === "start") { await docker(["start", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "POST" && parts[3] === "stop") { await docker(["stop", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }

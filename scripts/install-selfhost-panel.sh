@@ -8,13 +8,13 @@ sudo apt-get update
 sudo apt-get install -y mariadb-server nginx certbot python3-certbot-nginx
 sudo systemctl enable --now mariadb
 sudo mysql <<SQL
-CREATE DATABASE IF NOT EXISTS mystic-host CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'mystic-host'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
-ALTER USER 'mystic-host'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
-GRANT ALL PRIVILEGES ON mystic-host.* TO 'mystic-host'@'127.0.0.1';
+    CREATE DATABASE IF NOT EXISTS mystic_host CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE USER IF NOT EXISTS 'mystic_host'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
+    ALTER USER 'mystic_host'@'127.0.0.1' IDENTIFIED BY '${DB_PASSWORD}';
+    GRANT ALL PRIVILEGES ON mystic_host.* TO 'mystic_host'@'127.0.0.1';
 FLUSH PRIVILEGES;
 SQL
-sudo mysql mystic-host <<'SQL'
+sudo mysql mystic_host <<'SQL'
 CREATE TABLE IF NOT EXISTS users (id int AUTO_INCREMENT NOT NULL, openId varchar(64) NOT NULL, name text, email varchar(320), loginMethod varchar(64), role enum('user','admin') NOT NULL DEFAULT 'user', createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, lastSignedIn timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY users_openId_unique (openId));
 CREATE TABLE IF NOT EXISTS stored_files (id int AUTO_INCREMENT NOT NULL, userId int NOT NULL, serverName varchar(100) NOT NULL, originalName varchar(255) NOT NULL, storageKey varchar(512) NOT NULL, storageUrl varchar(768) NOT NULL, mimeType varchar(150) NOT NULL, size int NOT NULL, createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY stored_files_storageKey_unique (storageKey));
 SQL
@@ -22,6 +22,9 @@ SQL
 sudo install -d -o ubuntu -g ubuntu /opt/mystic-host-panel
 sudo rm -rf /opt/mystic-host-panel/dist /opt/mystic-host-panel/package.json /opt/mystic-host-panel/node_modules
 sudo tar -xzf /tmp/mystic-host-panel.tar.gz -C /opt/mystic-host-panel
+if [[ -f /opt/mystic-host-panel/drizzle/0001_mystic_host_control_plane.sql ]]; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0001_mystic_host_control_plane.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel
@@ -29,7 +32,7 @@ sudo install -d -m 0750 /etc/mystic-host
 sudo tee /etc/mystic-host/panel.env >/dev/null <<ENV
 NODE_ENV=production
 PORT=3000
-DATABASE_URL=mysql://mystic-host:${DB_PASSWORD}@127.0.0.1:3306/mystic-host
+DATABASE_URL=mysql://mystic_host:${DB_PASSWORD}@127.0.0.1:3306/mystic_host
 JWT_SECRET=${JWT_SECRET}
 VITE_APP_ID=${VITE_APP_ID}
 OAUTH_SERVER_URL=${OAUTH_SERVER_URL}
