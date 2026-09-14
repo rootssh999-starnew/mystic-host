@@ -4,7 +4,7 @@ import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile } from "./nodeAgent";
-import { createAllocation, createLocation, createNode, createPersistentServer, createSchedule, getNode, listAllocations, listEggs, listLocations, listNests, listNodes, listSchedules, listServers, seedCatalog, updateNodeStatus, updateServerStatus } from "./controlPlane";
+import { createAllocation, createLocation, createNode, createPersistentServer, createSchedule, createServerUser, getNode, listAllocations, listEggs, listLocations, listNests, listNodes, listSchedules, listServerUsers, listServers, seedCatalog, updateNodeStatus, updateServerStatus } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -73,6 +73,8 @@ export const appRouter = router({
     nodeStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["offline", "online", "maintenance"]) })).mutation(({ input }) => updateNodeStatus(input.id, input.status)),
     schedules: adminProcedure.input(z.object({ serverId: z.number().int().positive() })).query(({ input }) => listSchedules(input.serverId)),
     createSchedule: adminProcedure.input(z.object({ serverId: z.number().int().positive(), name: z.string().min(1).max(100), cron: z.string().min(1).max(100), action: z.enum(["start", "stop", "restart", "command"]), payload: z.string().optional() })).mutation(({ input }) => createSchedule(input)),
+    serverUsers: adminProcedure.input(z.object({ serverId: z.number().int().positive() })).query(({ input }) => listServerUsers(input.serverId)),
+    createServerUser: adminProcedure.input(z.object({ serverId: z.number().int().positive(), userId: z.number().int().positive(), permissions: z.array(z.string().min(1)).min(1).max(50) })).mutation(({ input }) => createServerUser(input)),
     nodeConfig: adminProcedure.input(z.object({ nodeId: z.number().int().positive() })).query(async ({ input }) => { const node = await getNode(input.nodeId); return { debug: false, uuid: String(node.id), token: node.daemonToken, api: { host: "0.0.0.0", port: node.daemonPort, ssl: { enabled: node.scheme === "https", cert: `/etc/letsencrypt/live/${node.fqdn}/fullchain.pem`, key: `/etc/letsencrypt/live/${node.fqdn}/privkey.pem` }, upload_limit: 100 }, system: { data: "/var/lib/mystic-host/volumes", sftp: { bind_port: node.sftpPort } }, remote: `${node.scheme}://${node.fqdn}` }; }),
   }),
   node: router({

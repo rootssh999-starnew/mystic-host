@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
-import { allocations, backups, eggs, locations, nests, nodes, schedules, servers } from "../drizzle/schema";
+import { allocations, backups, eggs, locations, nests, nodes, schedules, serverUsers, servers } from "../drizzle/schema";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -132,4 +132,18 @@ export async function listBackups(serverId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(backups).where(eq(backups.serverId, serverId)).orderBy(desc(backups.id));
+}
+
+export async function listServerUsers(serverId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(serverUsers).where(eq(serverUsers.serverId, serverId)).orderBy(desc(serverUsers.id));
+}
+
+export async function createServerUser(input: { serverId: number; userId: number; permissions: string[] }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(serverUsers).values({ serverId: input.serverId, userId: input.userId, permissionsJson: JSON.stringify(Array.from(new Set(input.permissions))) });
+  const rows = await db.select().from(serverUsers).where(eq(serverUsers.id, Number(result[0].insertId))).limit(1);
+  return rows[0];
 }
