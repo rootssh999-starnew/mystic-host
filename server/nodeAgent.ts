@@ -52,6 +52,13 @@ export function nodeCreateBackup(name: string) {
 export function nodeRestoreBackup(name: string, backupName: string) {
   return request<{ success: boolean; name: string }>(`/v1/servers/${encodeURIComponent(name)}/restore`, { method: "POST", body: JSON.stringify({ name: backupName }) });
 }
+export function nodeListFiles(name: string, relativePath?: string) {
+  const query = relativePath ? `?path=${encodeURIComponent(relativePath)}` : "";
+  return request<{ files: Array<{ name: string; path: string; directory: boolean; bytes: number; modifiedAt: string }> }>(`/v1/servers/${encodeURIComponent(name)}/files${query}`);
+}
+export function nodeDownloadFile(name: string, relativePath: string) {
+  return request<{ path: string; bytes: number; dataBase64: string }>(`/v1/servers/${encodeURIComponent(name)}/files/${relativePath.split("/").map(encodeURIComponent).join("/")}`);
+}
 export function nodeUploadFile(name: string, filePath: string, data: Buffer) {
   return request<{ success: boolean; path: string; size: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, {
     method: "POST",

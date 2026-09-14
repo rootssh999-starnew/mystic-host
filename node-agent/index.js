@@ -133,6 +133,27 @@ async function handle(req, res) {
     await exec("tar", ["-xzf", archive, "--strip-components=1", "-C", serverRoot, "--exclude=.backups"]);
     return send(res, 200, { success: true, name: backupName });
   }
+  if (req.method === "GET" && parts[3] === "files" && parts.length === 4) {
+    const rawPath = url.searchParams.get("path");
+    const relative = rawPath ? safeRelativePath(rawPath) : ".";
+    const directory = path.join(serverRoot, relative);
+    const entries = await readdir(directory, { withFileTypes: true });
+    const files = await Promise.all(entries.map(async (entry) => {
+      const entryPath = path.join(directory, entry.name);
+      const details = await stat(entryPath);
+      return { name: entry.name, path: path.posix.join(relative, entry.name), directory: entry.isDirectory(), bytes: details.size, modifiedAt: details.mtime.toISOString() };
+    }));
+    return send(res, 200, { files });
+  }
+  if (req.method === "GET" && parts[3] === "files" && parts.length >= 5) {
+    const relative = safeRelativePath(parts.slice(4).join("/"));
+    const target = path.join(serverRoot, relative);
+    const details = await stat(target);
+    if (details.isDirectory()) throw new Error("Path is a directory");
+    if (details.size > 20 * 1024 * 1024) throw new Error("File is too large to download through the API");
+    const data = await readFile(target);
+    return send(res, 200, { path: relative, bytes: details.size, dataBase64: data.toString("base64") });
+  }
   if (req.method === "POST" && parts[3] === "files") {
     const relative = safeRelativePath(input.path);
     const target = path.join(serverRoot, relative);
