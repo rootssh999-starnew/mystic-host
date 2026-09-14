@@ -128,6 +128,18 @@ export async function createSchedule(input: typeof schedules.$inferInsert) {
   return rows[0];
 }
 
+export async function listEnabledSchedules() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ schedule: schedules, server: servers }).from(schedules).innerJoin(servers, eq(schedules.serverId, servers.id)).where(eq(schedules.enabled, 1));
+}
+
+export async function markScheduleRun(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(schedules).set({ lastRunAt: new Date() }).where(eq(schedules.id, id));
+}
+
 export async function listBackups(serverId: number) {
   const db = await getDb();
   if (!db) return [];
