@@ -1,0 +1,6 @@
+import fs from "node:fs";
+const path = "/opt/mystic-host/client/src/pages/Home.tsx";
+let source = fs.readFileSync(path, "utf8");
+source = source.replace('  const deleteMutation = trpc.files.delete.useMutation({', '  const extractMutation = trpc.files.extract.useMutation({ onSuccess: () => onAction("Archive extracted on the Docker volume"), onError: (error) => onAction(error.message) });\n  const deleteMutation = trpc.files.delete.useMutation({');
+source = source.replace('<button className="row-more" onClick={() => { if (window.confirm("Remove " + file.originalName + " from this server?")) deleteMutation.mutate({ id: file.id }); }} disabled={deleteMutation.isPending}><Trash2 size={15} /></button>', '<>{file.originalName.toLowerCase().endsWith(".zip") && <button className="row-more" onClick={() => extractMutation.mutate({ serverName, fileName: file.originalName })} disabled={extractMutation.isPending}><FileArchive size={15} /></button>}<button className="row-more" onClick={() => { if (window.confirm("Remove " + file.originalName + " from this server?")) deleteMutation.mutate({ id: file.id }); }} disabled={deleteMutation.isPending}><Trash2 size={15} /></button></>');
+fs.writeFileSync(path, source);

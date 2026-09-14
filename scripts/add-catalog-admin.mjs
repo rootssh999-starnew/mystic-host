@@ -1,0 +1,8 @@
+import fs from "node:fs";
+const path = "/opt/mystic-host/client/src/pages/Admin.tsx";
+let source = fs.readFileSync(path, "utf8");
+source = source.replace('  const stats = overview.data;\n', '  const stats = overview.data;\n  const runtimes = trpc.catalog.runtimes.useQuery();\n  const plans = trpc.catalog.plans.useQuery();\n');
+const marker = '<section className="admin-grid">';
+const section = '<section className="admin-card catalog-card"><div className="admin-card-heading"><div><span className="admin-card-kicker">Launch catalog</span><h2>Runtime templates & plans</h2></div><button onClick={() => notify("Catalog manager opened")}>Manage catalog <ArrowUpRight size={14} /></button></div><div className="catalog-columns"><div><span className="catalog-label">Runtime templates</span><div className="runtime-pills">{(runtimes.data ?? []).map((runtime) => <button key={runtime.id} onClick={() => notify(runtime.name + " template selected")} className={"runtime-pill runtime-pill-" + runtime.accent}><span>{runtime.name}</span><small>{runtime.tags.join(" · ")}</small></button>)}</div></div><div><span className="catalog-label">Plans</span><div className="plan-pills">{(plans.data ?? []).map((plan) => <button key={plan.id} onClick={() => notify(plan.name + " plan selected")}><strong>{plan.name}</strong><small>{plan.priceCents === 0 ? "Free" : "$" + (plan.priceCents / 100).toFixed(0) + "/mo"} · {plan.memoryMb} MB · {plan.servers} server{plan.servers === 1 ? "" : "s"}</small></button>)}</div></div></div></section>';
+if (!source.includes('Runtime templates & plans')) source = source.replace(marker, section + marker);
+fs.writeFileSync(path, source);

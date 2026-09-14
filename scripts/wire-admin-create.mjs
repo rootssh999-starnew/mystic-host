@@ -1,0 +1,7 @@
+import fs from "node:fs";
+const path = "/opt/mystic-host/client/src/pages/Admin.tsx";
+let source = fs.readFileSync(path, "utf8");
+source = source.replace('  const plans = trpc.catalog.plans.useQuery();\n', '  const plans = trpc.catalog.plans.useQuery();\n  const createServerMutation = trpc.admin.createServer.useMutation({ onSuccess: (server) => notify("Live Docker server " + server.name + " created"), onError: (error) => notify("Create server failed: " + error.message) });\n');
+source = source.replace('  const notify = (message: string) => toast(message, { description: "This admin control is ready to connect to the platform service." });', '  const notify = (message: string) => toast(message, { description: "This admin control is connected to the platform service." });\n  const createServer = () => { const name = window.prompt("Server name (letters, numbers, hyphens):", "my-bot"); if (!name) return; const runtime = window.prompt("Runtime: nodejs, python, polyglot, or bun", "nodejs") || "nodejs"; createServerMutation.mutate({ name: name.trim(), runtime: runtime.trim(), memoryMb: 512, cpu: 0.5 }); };');
+source = source.replace('<button className="admin-primary-button" onClick={() => notify("Create server flow opened")}><Plus size={15} />Create server</button>', '<button className="admin-primary-button" onClick={createServer} disabled={createServerMutation.isPending}><Plus size={15} />{createServerMutation.isPending ? "Creating…" : "Create server"}</button>');
+fs.writeFileSync(path, source);
