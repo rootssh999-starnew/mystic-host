@@ -37,6 +37,9 @@ export function nodeAction(name: string, action: "start" | "stop" | "restart") {
 export function nodeLogs(name: string) {
   return request<{ logs: string }>(`/v1/servers/${encodeURIComponent(name)}/logs`);
 }
+export function nodeCommand(name: string, command: string) {
+  return request<{ output: string }>(`/v1/servers/${encodeURIComponent(name)}/command`, { method: "POST", body: JSON.stringify({ command }) });
+}
 export function nodeStats(name: string) {
   return request<Record<string, unknown>>(`/v1/servers/${encodeURIComponent(name)}/stats`);
 }

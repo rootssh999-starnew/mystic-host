@@ -3,7 +3,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCreateBackup, nodeExtractZip, nodeHealth, nodeLogs, nodeStats, nodeUploadFile } from "./nodeAgent";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeExtractZip, nodeHealth, nodeLogs, nodeStats, nodeUploadFile } from "./nodeAgent";
 import { createAllocation, createLocation, createNode, createPersistentServer, createSchedule, getNode, listAllocations, listEggs, listLocations, listNests, listNodes, listSchedules, listServers, seedCatalog, updateNodeStatus, updateServerStatus } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -82,6 +82,9 @@ export const appRouter = router({
     logs: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(({ input }) => nodeLogs(input.name)),
+    command: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48), command: z.string().min(1).max(2000) }))
+      .mutation(({ input }) => nodeCommand(input.name, input.command)),
     stats: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(({ input }) => nodeStats(input.name)),

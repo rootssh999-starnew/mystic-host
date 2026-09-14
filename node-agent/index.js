@@ -101,6 +101,12 @@ async function handle(req, res) {
     const output = await docker(["logs", "--tail", "200", container]);
     return send(res, 200, { logs: output });
   }
+  if (req.method === "POST" && parts[3] === "command") {
+    const command = String(input.command || "").trim();
+    if (!command || command.length > 2000) throw new Error("Command must be between 1 and 2000 characters");
+    const output = await docker(["exec", container, "sh", "-lc", command]);
+    return send(res, 200, { output });
+  }
   if (req.method === "GET" && parts[3] === "backups") {
     const backupDir = path.join(serverRoot, ".backups");
     const entries = await readdir(backupDir, { withFileTypes: true }).catch(() => []);
