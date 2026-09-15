@@ -1,4 +1,6 @@
-import { OAUTH_STATE_COOKIE, encodeOAuthState } from "@shared/const";
+import { OAUTH_STATE_COOKIE, encodeOAuthState } from '@shared/const';
+
+export const hasOAuth = Boolean(import.meta.env.VITE_OAUTH_PORTAL_URL && import.meta.env.VITE_APP_ID);
 
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 

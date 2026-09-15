@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { startScheduler } from "../scheduler";
 import { nodeLogs } from "../nodeAgent";
 import { sdk } from "./sdk";
+import { registerLocalAuthRoutes } from "../localAuth";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -40,6 +41,7 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  registerLocalAuthRoutes(app);
   app.get("/api/servers/:name/events", async (req, res) => {
     try {
       const user = await sdk.authenticateRequest(req);

@@ -1,21 +1,16 @@
 import { trpc } from "@/lib/trpc";
-import { startLogin } from "@/const";
-import { useEffect } from "react";
+import { hasOAuth, startLogin } from "@/const";
 
 export function useAuth(options: { redirectOnUnauthenticated?: boolean } = {}) {
   const query = trpc.auth.me.useQuery();
   const logoutMutation = trpc.auth.logout.useMutation({
     onSuccess: () => {
       void query.refetch();
-      startLogin();
+      if (hasOAuth) startLogin();
     },
   });
   const redirectOnUnauthenticated = options.redirectOnUnauthenticated ?? false;
-
-  useEffect(() => {
-    if (!redirectOnUnauthenticated || query.isLoading || query.data) return;
-    startLogin();
-  }, [query.data, query.isLoading, redirectOnUnauthenticated]);
+  void redirectOnUnauthenticated;
 
   return {
     user: query.data ?? null,

@@ -19,7 +19,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { startLogin } from "@/const";
+import { hasOAuth, startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -65,16 +65,10 @@ export default function DashboardLayout({
               Sign in to continue
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm">
-              Access to this dashboard requires authentication. Continue to launch the login flow.
+              Access to this dashboard requires authentication.
             </p>
           </div>
-          <Button
-            onClick={() => startLogin()}
-            size="lg"
-            className="w-full shadow-lg hover:shadow-xl transition-all"
-          >
-            Sign in
-          </Button>
+          {hasOAuth ? <Button onClick={() => startLogin()} size="lg" className="w-full shadow-lg hover:shadow-xl transition-all">Sign in</Button> : <LocalLoginForm />}
         </div>
       </div>
     );
@@ -93,6 +87,22 @@ export default function DashboardLayout({
       </DashboardLayoutContent>
     </SidebarProvider>
   );
+}
+
+function LocalLoginForm() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/local/login", { method: "POST", headers: { "content-type": "application/json" }, credentials: "include", body: JSON.stringify({ email, password }) });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Login failed");
+      window.location.reload();
+    } catch (err) { setError(err instanceof Error ? err.message : "Login failed"); setBusy(false); }
+  };
+  return <form onSubmit={submit} className="w-full space-y-3"><input className="w-full rounded-md border bg-background px-3 py-2" type="email" autoComplete="username" placeholder="Email" value={email} onChange={event => setEmail(event.target.value)} required /><input className="w-full rounded-md border bg-background px-3 py-2" type="password" autoComplete="current-password" placeholder="Password" value={password} onChange={event => setPassword(event.target.value)} required /><Button type="submit" disabled={busy} size="lg" className="w-full">{busy ? "Signing in…" : "Sign in"}</Button>{error && <p className="text-sm text-destructive text-center">{error}</p>}</form>;
 }
 
 type DashboardLayoutContentProps = {
