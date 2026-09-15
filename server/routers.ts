@@ -1,16 +1,18 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile } from "./nodeAgent";
-import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerUsers, listServers, seedCatalog, updateNodeStatus, updateServerStatus } from "./controlPlane";
+import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerUsers, listServers, seedCatalog, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+async function requireServerPermission(ctx: { user: { id: number; role: string } }, name: string, permission: string) { const access = await getServerAccess(name, ctx.user.id, ctx.user.role); if (!access.permissions.includes("*") && !access.permissions.includes(permission)) throw new TRPCError({ code: "FORBIDDEN", message: `Missing server permission: ${permission}` }); return access.server; }
 function safeFileName(value: string) {
   const trimmed = value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");
   return trimmed.slice(0, 180) || "uploaded-file";
@@ -88,34 +90,34 @@ export const appRouter = router({
   node: router({
     action: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), action: z.enum(["start", "stop", "restart"]) }))
-      .mutation(({ input }) => nodeAction(input.name, input.action)),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "control"); return nodeAction(input.name, input.action); }),
     logs: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
-      .query(({ input }) => nodeLogs(input.name)),
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "control"); return nodeLogs(input.name); }),
     command: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), command: z.string().min(1).max(2000) }))
-      .mutation(({ input }) => nodeCommand(input.name, input.command)),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "console"); return nodeCommand(input.name, input.command); }),
     stats: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
-      .query(({ input }) => nodeStats(input.name)),
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "control"); return nodeStats(input.name); }),
     backups: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
-      .query(({ input }) => nodeBackups(input.name)),
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "backup.read"); return nodeBackups(input.name); }),
     createBackup: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
-      .mutation(({ input }) => nodeCreateBackup(input.name)),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "backup.create"); return nodeCreateBackup(input.name); }),
     restoreBackup: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), backupName: z.string().min(1).max(255) }))
-      .mutation(({ input }) => nodeRestoreBackup(input.name, input.backupName)),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "backup.restore"); return nodeRestoreBackup(input.name, input.backupName); }),
     listFiles: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), path: z.string().max(500).optional() }))
-      .query(({ input }) => nodeListFiles(input.name, input.path)),
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeListFiles(input.name, input.path); }),
     downloadFile: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), path: z.string().min(1).max(500) }))
-      .query(({ input }) => nodeDownloadFile(input.name, input.path)),
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeDownloadFile(input.name, input.path); }),
     createDatabase: protectedProcedure
       .input(z.object({ serverName: z.string().min(2).max(48), name: z.string().min(1).max(48), username: z.string().min(1).max(48), password: z.string().min(12).max(255) }))
-      .mutation(({ input }) => nodeCreateDatabase(input.serverName, input.name, input.username, input.password)),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.create"); return nodeCreateDatabase(input.serverName, input.name, input.username, input.password); }),
   }),
   files: router({
     list: protectedProcedure
@@ -126,6 +128,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const { mimeType, buffer } = decodeDataUrl(input.dataUrl);
         if (input.size !== buffer.byteLength) throw new Error("File size did not match the uploaded payload");
+        await requireServerPermission(ctx, input.serverName, "file.write");
         const name = safeFileName(input.fileName);
         const upload = await storagePut(`${ctx.user.id}/servers/${input.serverName}/${name}`, buffer, mimeType);
         await nodeUploadFile(input.serverName, name, buffer);
@@ -133,7 +136,7 @@ export const appRouter = router({
       }),
     extract: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255) }))
-      .mutation(({ input }) => nodeExtractZip(input.serverName, safeFileName(input.fileName))),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeExtractZip(input.serverName, safeFileName(input.fileName)); }),
     delete: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(({ ctx, input }) => deleteStoredFile(ctx.user.id, input.id)),

@@ -108,6 +108,20 @@ export async function createPersistentServer(input: Omit<typeof servers.$inferIn
   return rows[0];
 }
 
+export async function getServerAccess(identifierValue: string, userId: number, role: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const rows = await db.select().from(servers).where(eq(servers.identifier, identifierValue)).limit(1);
+  const server = rows[0];
+  if (!server) throw new Error("Server not found");
+  if (role === "admin" || server.ownerId === userId) return { server, permissions: ["*" ] };
+  const memberships = await db.select().from(serverUsers).where(and(eq(serverUsers.serverId, server.id), eq(serverUsers.userId, userId))).limit(1);
+  if (!memberships[0]) throw new Error("You do not have access to this server");
+  let permissions: string[] = [];
+  try { permissions = JSON.parse(memberships[0].permissionsJson) as string[]; } catch { permissions = []; }
+  return { server, permissions };
+}
+
 export async function updateServerStatus(id: number, status: typeof servers.$inferInsert.status) {
   const db = await getDb();
   if (!db) return;
