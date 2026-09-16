@@ -77,3 +77,5 @@ export function nodeExtractZip(name: string, archive: string) {
 export function deleteNodeServer(name: string) {
   return request<{ success: boolean }>(`/v1/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
 }
+
+export function nodeSftpCredentials(name: string) { return request<{ host: string; port: number; username: string; password: string }>(`/v1/servers/${encodeURIComponent(name)}/sftp-credentials`); }

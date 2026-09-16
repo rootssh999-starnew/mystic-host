@@ -4,17 +4,54 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, rm, readdir, readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const exec = promisify(execFile);
+const require = createRequire(import.meta.url);
+const { Server: SSHServer } = require("ssh2");
+const SftpServer = require("./vendor/ssh2-sftp-server/index.js");
 const PORT = Number(process.env.MYSTIC_HOST_AGENT_PORT || 8787);
+const SFTP_PORT = Number(process.env.MYSTIC_HOST_SFTP_PORT || 2022);
 const TOKEN = process.env.MYSTIC_HOST_AGENT_TOKEN || (await readFile(process.env.MYSTIC_HOST_AGENT_TOKEN_FILE || "/opt/mystic-host-node/agent.token", "utf8").catch(() => "")).trim();
 const ROOT = process.env.MYSTIC_HOST_DATA_ROOT || "/opt/mystic-host-node/data";
+const SFTP_ROOT = path.resolve(ROOT);
+function sftpPassword(name) { return createHash("sha256").update(`${TOKEN}:${name}`).digest("hex"); }
+const HOST_KEY = process.env.MYSTIC_HOST_SFTP_HOST_KEY || path.join(path.dirname(ROOT), "sftp-host-ed25519");
 const MAX_BODY = 30 * 1024 * 1024;
+
+async function ensureHostKey() {
+  try { await stat(HOST_KEY); } catch { await exec("ssh-keygen", ["-t", "ed25519", "-N", "", "-f", HOST_KEY]); }
+}
+
+async function startSftp() {
+  await mkdir(SFTP_ROOT, { recursive: true });
+  await ensureHostKey();
+  const ssh = new SSHServer({ hostKeys: [await readFile(HOST_KEY)] }, (client) => {
+    let username = "";
+    client.on("authentication", (ctx) => {
+      username = String(ctx.username || "");
+      if (ctx.method === "password" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,48}$/.test(username) && ctx.password === sftpPassword(username)) ctx.accept();
+      else ctx.reject();
+    }).on("ready", () => {
+      client.on("session", (accept) => {
+        const session = accept();
+        session.on("sftp", (acceptSftp) => {
+          const stream = acceptSftp();
+          const serverRoot = path.join(SFTP_ROOT, username);
+          mkdir(serverRoot, { recursive: true }).then(() => new SftpServer(stream, serverRoot)).catch(() => stream.end());
+        });
+      });
+    });
+  });
+  ssh.listen(SFTP_PORT, "0.0.0.0", () => console.log(`MYSTIC HOST SFTP listening on 0.0.0.0:${SFTP_PORT}`));
+}
 
 if (!TOKEN) {
   console.error("MYSTIC_HOST_AGENT_TOKEN is required");
   process.exit(1);
 }
+await startSftp();
 
 function send(res, status, body) {
   const payload = JSON.stringify(body);
@@ -57,7 +94,7 @@ async function containerInfo(name) {
   }
 }
 async function handle(req, res) {
-  if (req.url === "/health" && req.method === "GET") return send(res, 200, { ok: true, service: "mystic-host-node-agent", version: "1.1.0" });
+  if (req.url === "/health" && req.method === "GET") return send(res, 200, { ok: true, service: "mystic-host-node-agent", version: "1.2.0", sftp: { port: SFTP_PORT, username: "<server-name>" } });
   if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(res, 401, { error: "Unauthorized" });
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const parts = url.pathname.split("/").filter(Boolean);
@@ -72,6 +109,7 @@ async function handle(req, res) {
 
   if (parts[1] !== "servers" || !parts[2]) return send(res, 404, { error: "Route not found" });
   const name = safeName(parts[2]);
+  if (req.method === "GET" && parts[3] === "sftp-credentials") return send(res, 200, { host: req.headers.host?.split(":")[0] || "node.mystichost.qzz.io", port: SFTP_PORT, username: name, password: sftpPassword(name) });
   const serverRoot = path.join(ROOT, name);
   await mkdir(serverRoot, { recursive: true });
   const container = `mystic-host-${name}`;

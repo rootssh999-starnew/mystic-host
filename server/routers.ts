@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile } from "./nodeAgent";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerUsers, listServers, seedCatalog, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -115,6 +115,9 @@ export const appRouter = router({
     downloadFile: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), path: z.string().min(1).max(500) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeDownloadFile(input.name, input.path); }),
+    sftpCredentials: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48) }))
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeSftpCredentials(input.name); }),
     createDatabase: protectedProcedure
       .input(z.object({ serverName: z.string().min(2).max(48), name: z.string().min(1).max(48), username: z.string().min(1).max(48), password: z.string().min(12).max(255) }))
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.create"); return nodeCreateDatabase(input.serverName, input.name, input.username, input.password); }),
