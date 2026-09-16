@@ -224,9 +224,6 @@ function HomeLogin() {
 export default function Home() {
   const { user, loading, logout } = useAuth();
 
-  if (loading) return <div className="auth-screen"><div className="auth-card"><h1>Loading MYSTIC HOST…</h1></div></div>;
-  if (!user) return <HomeLogin />;
-
   const [activePanel, setActivePanel] = useState<PanelKey>("Console");
   const [activeServer, setActiveServer] = useState(servers[0]);
   const [serverMenuOpen, setServerMenuOpen] = useState(false);
@@ -249,6 +246,9 @@ export default function Home() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  if (loading) return <div className="auth-screen"><div className="auth-card"><h1>Loading MYSTIC HOST…</h1></div></div>;
+  if (!user) return <HomeLogin />;
 
   const action = (message: string) => toast(message, { description: "This control plane action is ready to connect to your runtime API." });
   const grouped = useMemo(() => ({ Manage: navItems.filter((item) => item.group === "Manage"), Configure: navItems.filter((item) => item.group === "Configure") }), []);
