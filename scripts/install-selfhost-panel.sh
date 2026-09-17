@@ -25,6 +25,9 @@ sudo tar -xzf /tmp/mystic-host-panel.tar.gz -C /opt/mystic-host-panel
 if [[ -f /opt/mystic-host-panel/drizzle/0001_mystic_host_control_plane.sql ]]; then
   sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0001_mystic_host_control_plane.sql
 fi
+if [[ -f /opt/mystic-host-panel/drizzle/0002_mystic_host_jobs.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'jobs'" | grep -q '^jobs$'; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0002_mystic_host_jobs.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel
