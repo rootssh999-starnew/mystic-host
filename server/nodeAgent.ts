@@ -35,13 +35,13 @@ export function nodeAction(name: string, action: "start" | "stop" | "restart") {
   return request<NodeServer>(`/v1/servers/${encodeURIComponent(name)}/${action}`, { method: "POST" });
 }
 export function nodeLogs(name: string) {
-  return request<{ logs: string }>(`/v1/servers/${encodeURIComponent(name)}/logs`);
+  return request<{ logs: string; name?: string; status?: string }>(`/v1/servers/${encodeURIComponent(name)}/logs`);
 }
 export function nodeCommand(name: string, command: string) {
   return request<{ output: string }>(`/v1/servers/${encodeURIComponent(name)}/command`, { method: "POST", body: JSON.stringify({ command }) });
 }
 export function nodeStats(name: string) {
-  return request<Record<string, unknown>>(`/v1/servers/${encodeURIComponent(name)}/stats`);
+  return request<Record<string, unknown> & { name?: string; status?: string }>(`/v1/servers/${encodeURIComponent(name)}/stats`);
 }
 export function nodeBackups(name: string) {
   return request<{ backups: Array<{ name: string; bytes: number; createdAt: string }> }>(`/v1/servers/${encodeURIComponent(name)}/backups`);

@@ -93,6 +93,9 @@ async function containerInfo(name) {
     return { name, status: "missing", running: false };
   }
 }
+function isMissingContainerError(error) {
+  return String(error?.stderr || error?.message || error).includes("No such container");
+}
 async function handle(req, res) {
   if (req.url === "/health" && req.method === "GET") return send(res, 200, { ok: true, service: "mystic-host-node-agent", version: "1.2.0", sftp: { port: SFTP_PORT, username: "<server-name>" } });
   if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(res, 401, { error: "Unauthorized" });
@@ -132,11 +135,15 @@ async function handle(req, res) {
   if (req.method === "POST" && parts[3] === "stop") { await docker(["stop", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "POST" && parts[3] === "restart") { await docker(["restart", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "GET" && parts[3] === "stats") {
-    const output = await docker(["stats", "--no-stream", "--format", "{{json .}}", container]);
+    let output;
+    try { output = await docker(["stats", "--no-stream", "--format", "{{json .}}", container]); }
+    catch (error) { if (isMissingContainerError(error)) return send(res, 200, { name, status: "missing" }); throw error; }
     return send(res, 200, JSON.parse(output || "{}"));
   }
   if (req.method === "GET" && parts[3] === "logs") {
-    const output = await docker(["logs", "--tail", "200", container]);
+    let output;
+    try { output = await docker(["logs", "--tail", "200", container]); }
+    catch (error) { if (isMissingContainerError(error)) return send(res, 200, { logs: "", name, status: "missing" }); throw error; }
     return send(res, 200, { logs: output });
   }
   if (req.method === "POST" && parts[3] === "command") {
