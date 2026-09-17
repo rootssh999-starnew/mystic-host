@@ -3,6 +3,8 @@ import { authenticateApiToken, getDb } from "./db";
 import { servers } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
 import { nodeAction } from "./nodeAgent";
+import { createManagedNodeServer, deleteNodeServer } from "./nodeAgent";
+import { createPersistentServer, deletePersistentServer, updatePersistentServer } from "./controlPlane";
 
 const requestBuckets = new Map<string, { started: number; count: number }>();
 
@@ -81,5 +83,40 @@ export function registerApiRoutes(app: Express) {
     if (!server || (!isApplication && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
     try { const result = await nodeAction(server.identifier, signal); return res.json({ object: "server", attributes: result }); }
     catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "Node action failed."); }
+  });
+
+  app.post(["/api/application/servers", "/api/application/v1/servers"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "servers.create")) return error(res, 403, "Forbidden", "The API token lacks the servers.create scope.");
+    const input = req.body || {};
+    if (typeof input.name !== "string" || typeof input.node_id !== "number" || typeof input.image !== "string" || typeof input.startup !== "string") return error(res, 422, "Validation Error", "name, node_id, image, and startup are required.");
+    try {
+      const server = await createPersistentServer({ ownerId: Number(input.owner_id || auth.user.id), nodeId: input.node_id, allocationId: typeof input.allocation_id === "number" ? input.allocation_id : undefined, eggId: typeof input.egg_id === "number" ? input.egg_id : undefined, name: input.name, runtime: String(input.runtime || "nodejs"), image: input.image, startup: input.startup, installScript: String(input.install_script || ""), variablesJson: typeof input.variables === "object" ? JSON.stringify(input.variables) : "{}", memoryMb: Number(input.memory || 512), diskMb: Number(input.disk || 5120), cpu: Math.round(Number(input.cpu || 100)) });
+      await createManagedNodeServer({ name: server.identifier, runtime: server.runtime, image: server.image, startup: server.startup, installScript: server.installScript, memoryMb: server.memoryMb, cpu: server.cpu / 100 });
+      return res.status(201).json(resource(server));
+    } catch (e) { return error(res, 502, "Provisioning Error", e instanceof Error ? e.message : "Server creation failed."); }
+  });
+
+  app.patch(["/api/application/servers/:identifier", "/api/application/v1/servers/:identifier"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "servers.update")) return error(res, 403, "Forbidden", "The API token lacks the servers.update scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    if (!rows[0]) return error(res, 404, "Not Found", "Server not found.");
+    const updated = await updatePersistentServer(rows[0].id, { name: typeof req.body?.name === "string" ? req.body.name : undefined, startup: typeof req.body?.startup === "string" ? req.body.startup : undefined, image: typeof req.body?.image === "string" ? req.body.image : undefined, memoryMb: typeof req.body?.memory === "number" ? req.body.memory : undefined, diskMb: typeof req.body?.disk === "number" ? req.body.disk : undefined, cpu: typeof req.body?.cpu === "number" ? Math.round(req.body.cpu) : undefined });
+    return res.json(resource(updated));
+  });
+
+  app.delete(["/api/application/servers/:identifier", "/api/application/v1/servers/:identifier"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "servers.delete")) return error(res, 403, "Forbidden", "The API token lacks the servers.delete scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    if (!rows[0]) return error(res, 404, "Not Found", "Server not found.");
+    await deleteNodeServer(rows[0].identifier).catch(() => {});
+    await deletePersistentServer(rows[0].id);
+    return res.status(204).end();
   });
 }

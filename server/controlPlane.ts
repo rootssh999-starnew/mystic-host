@@ -168,6 +168,21 @@ export async function createPersistentServer(input: Omit<typeof servers.$inferIn
   return rows[0];
 }
 
+export async function updatePersistentServer(id: number, input: Partial<Pick<typeof servers.$inferInsert, "name" | "startup" | "image" | "memoryMb" | "diskMb" | "cpu">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(servers).set(input).where(eq(servers.id, id));
+  const rows = await db.select().from(servers).where(eq(servers.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deletePersistentServer(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.delete(servers).where(eq(servers.id, id));
+  return { success: true } as const;
+}
+
 export async function getServerAccess(identifierValue: string, userId: number, role: string) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
