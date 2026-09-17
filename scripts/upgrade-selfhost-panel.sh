@@ -31,6 +31,9 @@ if [[ -f "$STAGE/pnpm-lock.yaml" ]]; then cp -a "$STAGE/pnpm-lock.yaml" "$PANEL_
 if [[ -f "$PANEL_DIR/drizzle/0002_mystic_host_jobs.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'jobs'" | grep -q '^jobs$'; then
   mysql mystic_host < "$PANEL_DIR/drizzle/0002_mystic_host_jobs.sql"
 fi
+if [[ -f "$PANEL_DIR/drizzle/0003_server_install_metadata.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM servers LIKE 'installScript'" | grep -q '^installScript'; then
+  mysql mystic_host < "$PANEL_DIR/drizzle/0003_server_install_metadata.sql"
+fi
 
 rm -rf "$PANEL_DIR/dist.previous"
 if [[ -d "$PANEL_DIR/dist" ]]; then mv "$PANEL_DIR/dist" "$PANEL_DIR/dist.previous"; fi

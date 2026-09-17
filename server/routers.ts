@@ -9,6 +9,7 @@ import { createAllocation, createDatabaseHost, createLocation, createNode, creat
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { missingEggVariables, parseEggVariables, renderEggTemplate } from "@shared/eggEngine";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -60,13 +61,19 @@ export const appRouter = router({
     eggs: adminProcedure.input(z.object({ nestId: z.number().int().positive().optional() }).optional()).query(async ({ input }) => { await seedCatalog(); return listEggs(input?.nestId); }),
     servers: adminProcedure.query(() => listServers()),
     createPersistentServer: adminProcedure
-      .input(z.object({ ownerId: z.number().int().positive(), nodeId: z.number().int().positive(), allocationId: z.number().int().positive().optional(), eggId: z.number().int().positive().optional(), name: z.string().min(2).max(48), runtime: z.string().min(1), image: z.string().min(1), startup: z.string().min(1), memoryMb: z.number().int().min(128).max(65536), diskMb: z.number().int().min(128).max(1048576), cpu: z.number().min(0.1).max(64) }))
+      .input(z.object({ ownerId: z.number().int().positive(), nodeId: z.number().int().positive(), allocationId: z.number().int().positive().optional(), eggId: z.number().int().positive().optional(), name: z.string().min(2).max(48), runtime: z.string().min(1), image: z.string().min(1), startup: z.string().min(1), installScript: z.string().max(100000).optional(), variablesJson: z.string().max(20000).optional(), memoryMb: z.number().int().min(128).max(65536), diskMb: z.number().int().min(128).max(1048576), cpu: z.number().min(0.1).max(64) }))
       .mutation(async ({ input }) => {
-        const created = await createPersistentServer({ ...input, cpu: Math.round(input.cpu * 100) });
+        const variables = parseEggVariables(input.variablesJson || "{}");
+        const template = `${input.startup}\n${input.installScript || ""}`;
+        const missing = missingEggVariables(template, variables);
+        if (missing.length) throw new TRPCError({ code: "BAD_REQUEST", message: `Missing egg variables: ${missing.join(", ")}` });
+        const startup = renderEggTemplate(input.startup, variables);
+        const installScript = renderEggTemplate(input.installScript || "", variables);
+        const created = await createPersistentServer({ ...input, startup, installScript, variablesJson: JSON.stringify(variables), cpu: Math.round(input.cpu * 100) });
         const job = await createJob({ serverId: created.id, type: "server.create", payload: { identifier: created.identifier, name: created.name, image: created.image } });
         await updateJob(job.id, { status: "running" });
         try {
-          await createManagedNodeServer({ name: created.identifier, runtime: created.runtime, image: created.image, startup: created.startup, memoryMb: created.memoryMb, cpu: created.cpu / 100 });
+          await createManagedNodeServer({ name: created.identifier, runtime: created.runtime, image: created.image, startup: created.startup, installScript: created.installScript, memoryMb: created.memoryMb, cpu: created.cpu / 100 });
           await updateServerStatus(created.id, "offline");
           await updateJob(job.id, { status: "completed", result: { serverId: created.id, identifier: created.identifier } });
         } catch (error) {

@@ -28,7 +28,7 @@ export function listNodeServers() {
 export function createNodeServer(input: { name: string; runtime: string; memoryMb: number; cpu: number }) {
   return request<NodeServer>(`/v1/servers/${encodeURIComponent(input.name)}`, { method: "POST", body: JSON.stringify(input) });
 }
-export function createManagedNodeServer(input: { name: string; runtime: string; image: string; startup: string; memoryMb: number; cpu: number; port?: number }) {
+export function createManagedNodeServer(input: { name: string; runtime: string; image: string; startup: string; installScript?: string; memoryMb: number; cpu: number; port?: number }) {
   return request<NodeServer>(`/v1/servers/${encodeURIComponent(input.name)}`, { method: "POST", body: JSON.stringify(input) });
 }
 export function nodeAction(name: string, action: "start" | "stop" | "restart") {
