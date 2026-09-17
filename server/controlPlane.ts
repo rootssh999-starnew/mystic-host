@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
 import { normalizePermissions } from "@shared/permissions";
 import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, scheduleRuns, schedules, serverDatabases, serverUsers, servers, teamMembers, teams, users } from "../drizzle/schema";
+import { assertServerStatusTransition, type ServerStatus } from "@shared/serverLifecycle";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -200,7 +201,11 @@ export async function getServerAccess(identifierValue: string, userId: number, r
 
 export async function updateServerStatus(id: number, status: typeof servers.$inferInsert.status) {
   const db = await getDb();
-  if (!db) return;
+  if (!db) throw new Error("Database is not available");
+  const rows = await db.select({ status: servers.status }).from(servers).where(eq(servers.id, id)).limit(1);
+  const current = rows[0]?.status;
+  if (!current) throw new Error("Server not found");
+  assertServerStatusTransition(current as ServerStatus, status as ServerStatus);
   await db.update(servers).set({ status }).where(eq(servers.id, id));
 }
 
