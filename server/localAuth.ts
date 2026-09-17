@@ -66,7 +66,8 @@ export function registerLocalAuthRoutes(app: Express) {
     if (await db.getUserByEmail(invitation.email)) return res.status(409).json({ error: "An account already exists for this email" });
     const openId = `local:${invitation.email}`;
     await db.upsertUser({ openId, email: invitation.email, name: name || invitation.email.split("@")[0], passwordHash: hashPassword(password), loginMethod: "invitation", role: invitation.role });
-    const sessionToken = await sdk.createSessionToken(openId, { name: name || invitation.email, expiresInMs: ONE_YEAR_MS });
+    const createdUser = await db.getUserByOpenId(openId);
+    const sessionToken = await sdk.createSessionToken(openId, { name: name || invitation.email, expiresInMs: ONE_YEAR_MS, sessionVersion: createdUser?.sessionVersion ?? 0 });
     res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
     return res.json({ success: true });
   });
@@ -79,7 +80,7 @@ export function registerLocalAuthRoutes(app: Express) {
     if (!user?.passwordHash || !verifyPassword(password, user.passwordHash)) return res.status(401).json({ error: "Invalid email or password" });
     if (user.totpEnabled && user.totpSecretEncrypted) { const code = String(req.body?.code || ""); let valid = /^\d{6}$/.test(code) && validTotp(decryptSecret(user.totpSecretEncrypted), code); if (!valid && code) { try { const hashes = JSON.parse(user.recoveryCodesHash || "[]") as string[]; const hash = recoveryHash(code); const index = hashes.indexOf(hash); if (index >= 0) { hashes.splice(index, 1); await db.updateUserTwoFactor(user.id, { recoveryCodesHash: JSON.stringify(hashes) }); valid = true; } } catch {} } if (!valid) return res.status(401).json({ error: "Two-factor authentication code required" }); }
     await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
-    const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || email, expiresInMs: ONE_YEAR_MS });
+    const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || email, expiresInMs: ONE_YEAR_MS, sessionVersion: user.sessionVersion });
     res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
     return res.json({ success: true });
   });

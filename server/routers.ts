@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
-import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, listApiKeys, listInvitations, listStoredFiles, revokeApiKey, revokeInvitation } from "./db";
+import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, revokeApiKey, revokeInvitation } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { addTeamMember, createAllocation, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerUser, deleteTeamMember, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, seedCatalog, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
@@ -46,6 +46,7 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    logoutAllSessions: protectedProcedure.mutation(async ({ ctx }) => { await invalidateUserSessions(ctx.user.id); const cookieOptions = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 }); return { success: true } as const; }),
     apiKeys: router({
       list: protectedProcedure.query(({ ctx }) => listApiKeys(ctx.user.id)),
       create: protectedProcedure.input(z.object({ name: z.string().min(1).max(100), scopes: z.array(z.string().min(1).max(100)).min(1).max(50) })).mutation(({ ctx, input }) => createApiKey(ctx.user.id, input.name, input.scopes)),
