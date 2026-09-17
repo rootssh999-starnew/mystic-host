@@ -10,10 +10,11 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { missingEggVariables, parseEggVariables, renderEggTemplate } from "@shared/eggEngine";
+import { hasPermission } from "@shared/permissions";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-async function requireServerPermission(ctx: { user: { id: number; role: string } }, name: string, permission: string) { const access = await getServerAccess(name, ctx.user.id, ctx.user.role); if (!access.permissions.includes("*") && !access.permissions.includes(permission)) throw new TRPCError({ code: "FORBIDDEN", message: `Missing server permission: ${permission}` }); return access.server; }
+async function requireServerPermission(ctx: { user: { id: number; role: string } }, name: string, permission: string) { const access = await getServerAccess(name, ctx.user.id, ctx.user.role); if (!hasPermission(access.permissions, permission)) throw new TRPCError({ code: "FORBIDDEN", message: `Missing server permission: ${permission}` }); return access.server; }
 function safeFileName(value: string) {
   const trimmed = value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");
   return trimmed.slice(0, 180) || "uploaded-file";

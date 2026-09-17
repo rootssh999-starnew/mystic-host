@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
+import { normalizePermissions } from "@shared/permissions";
 import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, scheduleRuns, schedules, serverDatabases, serverUsers, servers, teamMembers, teams, users } from "../drizzle/schema";
 
 const identifier = () => randomBytes(12).toString("hex");
@@ -193,7 +194,7 @@ export async function getServerAccess(identifierValue: string, userId: number, r
   const memberships = await db.select().from(serverUsers).where(and(eq(serverUsers.serverId, server.id), eq(serverUsers.userId, userId))).limit(1);
   if (!memberships[0]) throw new Error("You do not have access to this server");
   let permissions: string[] = [];
-  try { permissions = JSON.parse(memberships[0].permissionsJson) as string[]; } catch { permissions = []; }
+  try { permissions = normalizePermissions(JSON.parse(memberships[0].permissionsJson) as string[]); } catch { permissions = []; }
   return { server, permissions };
 }
 
@@ -283,7 +284,7 @@ export async function listServerMembers(serverId: number) {
   const rows = await db.select({ membership: serverUsers, user: users }).from(serverUsers).innerJoin(users, eq(serverUsers.userId, users.id)).where(eq(serverUsers.serverId, serverId)).orderBy(desc(serverUsers.id));
   return rows.map(({ membership, user }) => {
     let permissions: string[] = [];
-    try { permissions = JSON.parse(membership.permissionsJson) as string[]; } catch { permissions = []; }
+    try { permissions = normalizePermissions(JSON.parse(membership.permissionsJson) as string[]); } catch { permissions = []; }
     return { id: membership.id, userId: user.id, name: user.name, email: user.email, role: user.role, permissions, createdAt: membership.createdAt };
   });
 }
@@ -296,7 +297,7 @@ export async function listServerUsers(serverId: number) {
 export async function createServerUser(input: { serverId: number; userId: number; permissions: string[] }) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  const result = await db.insert(serverUsers).values({ serverId: input.serverId, userId: input.userId, permissionsJson: JSON.stringify(Array.from(new Set(input.permissions))) });
+  const result = await db.insert(serverUsers).values({ serverId: input.serverId, userId: input.userId, permissionsJson: JSON.stringify(normalizePermissions(input.permissions)) });
   const rows = await db.select().from(serverUsers).where(eq(serverUsers.id, Number(result[0].insertId))).limit(1);
   return rows[0];
 }
@@ -304,7 +305,7 @@ export async function createServerUser(input: { serverId: number; userId: number
 export async function updateServerUser(id: number, permissions: string[]) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  await db.update(serverUsers).set({ permissionsJson: JSON.stringify(Array.from(new Set(permissions))) }).where(eq(serverUsers.id, id));
+  await db.update(serverUsers).set({ permissionsJson: JSON.stringify(normalizePermissions(permissions)) }).where(eq(serverUsers.id, id));
   const rows = await db.select().from(serverUsers).where(eq(serverUsers.id, id)).limit(1);
   return rows[0];
 }
