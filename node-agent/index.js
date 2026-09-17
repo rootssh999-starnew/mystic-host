@@ -117,6 +117,14 @@ async function handle(req, res) {
   await mkdir(serverRoot, { recursive: true });
   const container = `mystic-host-${name}`;
 
+  if (req.method === "GET" && parts[3] === "install-status") {
+    const markers = await Promise.all([".mystic-installing", ".mystic-installed", ".mystic-install-failed"].map(async (marker) => { try { await stat(path.join(serverRoot, marker)); return marker; } catch { return null; } }));
+    const marker = markers.find(Boolean);
+    const info = await containerInfo(name);
+    const status = marker === ".mystic-installed" ? "completed" : marker === ".mystic-install-failed" ? "failed" : marker === ".mystic-installing" ? "running" : info.status === "missing" ? "missing" : "pending";
+    return send(res, 200, { name, status, progress: status === "completed" ? 100 : status === "running" ? 50 : status === "failed" ? 100 : 0, container: info });
+  }
+
   if (req.method === "POST" && parts.length === 3) {
     const runtime = input.runtime || "nodejs";
     const image = String(input.image || imageForRuntime(runtime));
@@ -129,7 +137,7 @@ async function handle(req, res) {
     try { await docker(["inspect", container]); return send(res, 409, { error: "Server already exists" }); } catch {}
     const args = ["run", "-d", "--name", container, "--restart", "unless-stopped", "--memory", `${memory}m`, "--cpus", String(cpus), "-v", `${serverRoot}:/workspace`];
     if (Number.isInteger(port) && port > 0 && port < 65536) args.push("-p", `${port}:${port}`);
-    const command = installScript ? `set -eu\n${installScript}\nexec ${startup}` : startup;
+    const command = installScript ? `set -eu\nrm -f /workspace/.mystic-installed /workspace/.mystic-install-failed\nprintf installing > /workspace/.mystic-installing\ntrap 'rm -f /workspace/.mystic-installing; printf failed > /workspace/.mystic-install-failed' ERR\n${installScript}\nrm -f /workspace/.mystic-installing\nprintf installed > /workspace/.mystic-installed\nexec ${startup}` : startup;
     args.push(image, "sh", "-lc", command);
     await docker(args);
     return send(res, 201, { ...(await containerInfo(name)), runtime, image, startup, installScript: Boolean(installScript), memoryMb: memory, cpu: cpus, port: port || null });

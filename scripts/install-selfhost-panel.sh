@@ -31,6 +31,9 @@ fi
 if [[ -f /opt/mystic-host-panel/drizzle/0003_server_install_metadata.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM servers LIKE 'installScript'" | grep -q '^installScript'; then
   sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0003_server_install_metadata.sql
 fi
+if [[ -f /opt/mystic-host-panel/drizzle/0004_job_progress.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM jobs LIKE 'progress'" | grep -q '^progress'; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0004_job_progress.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel

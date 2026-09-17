@@ -142,11 +142,11 @@ export async function listJobs(serverId?: number) {
   return db.select().from(jobs).where(serverId ? eq(jobs.serverId, serverId) : undefined).orderBy(desc(jobs.id));
 }
 
-export async function updateJob(id: number, input: { status: "queued" | "running" | "completed" | "failed" | "cancelled"; result?: unknown; error?: string | null }) {
+export async function updateJob(id: number, input: { status: "queued" | "running" | "completed" | "failed" | "cancelled"; progress?: number; message?: string | null; result?: unknown; error?: string | null }) {
   const db = await getDb();
   if (!db) return;
   const now = new Date();
-  await db.update(jobs).set({ status: input.status, resultJson: input.result === undefined ? undefined : JSON.stringify(input.result), error: input.error ?? null, startedAt: input.status === "running" ? now : undefined, finishedAt: ["completed", "failed", "cancelled"].includes(input.status) ? now : undefined }).where(eq(jobs.id, id));
+  await db.update(jobs).set({ status: input.status, progress: input.progress === undefined ? undefined : Math.max(0, Math.min(100, Math.round(input.progress))), message: input.message === undefined ? undefined : input.message, resultJson: input.result === undefined ? undefined : JSON.stringify(input.result), error: input.error ?? null, startedAt: input.status === "running" ? now : undefined, finishedAt: ["completed", "failed", "cancelled"].includes(input.status) ? now : undefined }).where(eq(jobs.id, id));
 }
 
 export async function listSchedules(serverId: number) {

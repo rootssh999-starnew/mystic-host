@@ -34,6 +34,9 @@ fi
 if [[ -f "$PANEL_DIR/drizzle/0003_server_install_metadata.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM servers LIKE 'installScript'" | grep -q '^installScript'; then
   mysql mystic_host < "$PANEL_DIR/drizzle/0003_server_install_metadata.sql"
 fi
+if [[ -f "$PANEL_DIR/drizzle/0004_job_progress.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM jobs LIKE 'progress'" | grep -q '^progress'; then
+  mysql mystic_host < "$PANEL_DIR/drizzle/0004_job_progress.sql"
+fi
 
 rm -rf "$PANEL_DIR/dist.previous"
 if [[ -d "$PANEL_DIR/dist" ]]; then mv "$PANEL_DIR/dist" "$PANEL_DIR/dist.previous"; fi

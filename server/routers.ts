@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createJob, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, seedCatalog, updateJob, updateScheduleEnabled, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -112,6 +112,9 @@ export const appRouter = router({
     stats: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "control"); return nodeStats(input.name); }),
+    installStatus: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48) }))
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "control"); return nodeInstallStatus(input.name); }),
     backups: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "backup.read"); return nodeBackups(input.name); }),
