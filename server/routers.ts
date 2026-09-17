@@ -5,7 +5,7 @@ import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, listApiKeys, listInvitations, listStoredFiles, revokeApiKey, revokeInvitation } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
-import { createAllocation, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, deleteEgg, deleteNest, deleteServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, seedCatalog, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, getServerAccess } from "./controlPlane";
+import { addTeamMember, createAllocation, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerUser, deleteTeamMember, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, seedCatalog, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -59,6 +59,12 @@ export const appRouter = router({
   }),
   admin: router({
     overview: adminProcedure.query(() => getAdminOverview()),
+    teams: adminProcedure.query(({ ctx }) => listTeams(ctx.user.id)),
+    createTeam: adminProcedure.input(z.object({ name: z.string().min(1).max(100), description: z.string().max(500).default("") })).mutation(({ ctx, input }) => createTeam({ ownerId: ctx.user.id, name: input.name, description: input.description })),
+    teamMembers: adminProcedure.input(z.object({ teamId: z.number().int().positive() })).query(({ input }) => listTeamMembers(input.teamId)),
+    addTeamMember: adminProcedure.input(z.object({ teamId: z.number().int().positive(), userId: z.number().int().positive(), role: z.enum(["manager", "member"]).default("member") })).mutation(({ input }) => addTeamMember(input)),
+    updateTeamMember: adminProcedure.input(z.object({ id: z.number().int().positive(), role: z.enum(["manager", "member"]) })).mutation(({ input }) => updateTeamMember(input.id, input.role)),
+    deleteTeamMember: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => deleteTeamMember(input.id)),
     nodeHealth: adminProcedure.query(() => nodeHealth()),
     nodeServers: adminProcedure.query(() => listNodeServers()),
     locations: adminProcedure.query(() => listLocations()),

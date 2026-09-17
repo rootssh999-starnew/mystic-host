@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
-import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, scheduleRuns, schedules, serverDatabases, serverUsers, servers, users } from "../drizzle/schema";
+import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, scheduleRuns, schedules, serverDatabases, serverUsers, servers, teamMembers, teams, users } from "../drizzle/schema";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -315,6 +315,13 @@ export async function deleteServerUser(id: number) {
   await db.delete(serverUsers).where(eq(serverUsers.id, id));
   return { success: true } as const;
 }
+
+export async function listTeams(ownerId: number) { const db = await getDb(); if (!db) return []; return db.select().from(teams).where(eq(teams.ownerId, ownerId)).orderBy(desc(teams.id)); }
+export async function createTeam(input: { ownerId: number; name: string; description: string }) { const db = await getDb(); if (!db) throw new Error("Database is not available"); const result = await db.insert(teams).values(input); await db.insert(teamMembers).values({ teamId: Number(result[0].insertId), userId: input.ownerId, role: "owner" }); const rows = await db.select().from(teams).where(eq(teams.id, Number(result[0].insertId))).limit(1); return rows[0]; }
+export async function listTeamMembers(teamId: number) { const db = await getDb(); if (!db) return []; return db.select({ membership: teamMembers, user: users }).from(teamMembers).innerJoin(users, eq(teamMembers.userId, users.id)).where(eq(teamMembers.teamId, teamId)).orderBy(desc(teamMembers.id)); }
+export async function addTeamMember(input: { teamId: number; userId: number; role: "manager" | "member" }) { const db = await getDb(); if (!db) throw new Error("Database is not available"); const result = await db.insert(teamMembers).values(input); const rows = await db.select().from(teamMembers).where(eq(teamMembers.id, Number(result[0].insertId))).limit(1); return rows[0]; }
+export async function updateTeamMember(id: number, role: "manager" | "member") { const db = await getDb(); if (!db) throw new Error("Database is not available"); await db.update(teamMembers).set({ role }).where(eq(teamMembers.id, id)); const rows = await db.select().from(teamMembers).where(eq(teamMembers.id, id)).limit(1); return rows[0]; }
+export async function deleteTeamMember(id: number) { const db = await getDb(); if (!db) throw new Error("Database is not available"); await db.delete(teamMembers).where(eq(teamMembers.id, id)); return { success: true } as const; }
 
 export async function listDatabaseHosts() {
   const db = await getDb();

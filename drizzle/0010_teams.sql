@@ -1,0 +1,2 @@
+CREATE TABLE `teams` (`id` int AUTO_INCREMENT NOT NULL, `name` varchar(100) NOT NULL, `description` text NOT NULL, `ownerId` int NOT NULL, `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT `teams_id` PRIMARY KEY(`id`));
+CREATE TABLE `team_members` (`id` int AUTO_INCREMENT NOT NULL, `teamId` int NOT NULL, `userId` int NOT NULL, `role` enum('owner','manager','member') NOT NULL DEFAULT 'member', `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT `team_members_id` PRIMARY KEY(`id`));

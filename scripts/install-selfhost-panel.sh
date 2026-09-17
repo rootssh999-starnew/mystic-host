@@ -49,6 +49,9 @@ fi
 if [[ -f /opt/mystic-host-panel/drizzle/0009_totp.sql ]]; then
   sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0009_totp.sql 2>/dev/null || true
 fi
+if [[ -f /opt/mystic-host-panel/drizzle/0010_teams.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'teams'" | grep -q '^teams$'; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0010_teams.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel

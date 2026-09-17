@@ -52,6 +52,9 @@ fi
 if [[ -f "$PANEL_DIR/drizzle/0009_totp.sql" ]]; then
   mysql mystic_host < "$PANEL_DIR/drizzle/0009_totp.sql" 2>/dev/null || true
 fi
+if [[ -f "$PANEL_DIR/drizzle/0010_teams.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'teams'" | grep -q '^teams$'; then
+  mysql mystic_host < "$PANEL_DIR/drizzle/0010_teams.sql"
+fi
 
 rm -rf "$PANEL_DIR/dist.previous"
 if [[ -d "$PANEL_DIR/dist" ]]; then mv "$PANEL_DIR/dist" "$PANEL_DIR/dist.previous"; fi
