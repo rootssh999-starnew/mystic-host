@@ -4,6 +4,7 @@ import { getDb } from "./db";
 import { normalizePermissions } from "@shared/permissions";
 import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, scheduleRuns, schedules, serverDatabases, serverUsers, servers, teamMembers, teams, users } from "../drizzle/schema";
 import { assertServerStatusTransition, type ServerStatus } from "@shared/serverLifecycle";
+import { assertCapacityAvailable } from "@shared/nodeCapacity";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -70,6 +71,10 @@ export async function listAllocations(nodeId: number) {
 export async function createAllocation(input: typeof allocations.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
+  const node = await db.select({ id: nodes.id }).from(nodes).where(eq(nodes.id, input.nodeId)).limit(1);
+  if (!node[0]) throw new Error("Node not found");
+  const existing = await db.select({ id: allocations.id }).from(allocations).where(and(eq(allocations.nodeId, input.nodeId), eq(allocations.ip, input.ip), eq(allocations.port, input.port))).limit(1);
+  if (existing[0]) throw new Error("Allocation already exists for this node, IP, and port");
   const result = await db.insert(allocations).values(input);
   const rows = await db.select().from(allocations).where(eq(allocations.id, Number(result[0].insertId))).limit(1);
   return rows[0];
@@ -176,9 +181,32 @@ export async function listServers() {
 export async function createPersistentServer(input: Omit<typeof servers.$inferInsert, "identifier" | "status">) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
+  const nodeRows = await db.select().from(nodes).where(eq(nodes.id, input.nodeId)).limit(1);
+  const node = nodeRows[0];
+  if (!node) throw new Error("Node not found");
+  const reservations = await db.select({ memoryMb: servers.memoryMb, diskMb: servers.diskMb }).from(servers).where(eq(servers.nodeId, input.nodeId));
+  assertCapacityAvailable(node, reservations, { memoryMb: input.memoryMb, diskMb: input.diskMb });
+  if (input.allocationId !== undefined && input.allocationId !== null) {
+    const allocationRows = await db.select().from(allocations).where(eq(allocations.id, input.allocationId)).limit(1);
+    const allocation = allocationRows[0];
+    if (!allocation || allocation.nodeId !== input.nodeId) throw new Error("Allocation does not belong to the selected node");
+    if (allocation.serverId !== null) throw new Error("Allocation is already assigned");
+  }
   const result = await db.insert(servers).values({ ...input, identifier: identifier(), status: "installing" });
+  if (input.allocationId !== undefined && input.allocationId !== null) await db.update(allocations).set({ serverId: Number(result[0].insertId) }).where(eq(allocations.id, input.allocationId));
   const rows = await db.select().from(servers).where(eq(servers.id, Number(result[0].insertId))).limit(1);
   return rows[0];
+}
+
+export async function getNodeCapacity(nodeId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const nodeRows = await db.select().from(nodes).where(eq(nodes.id, nodeId)).limit(1);
+  const node = nodeRows[0];
+  if (!node) throw new Error("Node not found");
+  const reservations = await db.select({ memoryMb: servers.memoryMb, diskMb: servers.diskMb }).from(servers).where(eq(servers.nodeId, nodeId));
+  const capacity = assertCapacityAvailable(node, reservations, { memoryMb: 0, diskMb: 0 });
+  return { nodeId, status: node.status, servers: reservations.length, ...capacity };
 }
 
 export async function updatePersistentServer(id: number, input: Partial<Pick<typeof servers.$inferInsert, "name" | "startup" | "image" | "memoryMb" | "diskMb" | "cpu">>) {
