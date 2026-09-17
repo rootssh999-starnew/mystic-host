@@ -40,6 +40,9 @@ fi
 if [[ -f /opt/mystic-host-panel/drizzle/0006_schedule_history.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'schedule_runs'" | grep -q '^schedule_runs$'; then
   sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0006_schedule_history.sql
 fi
+if [[ -f /opt/mystic-host-panel/drizzle/0007_invitations.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'invitations'" | grep -q '^invitations$'; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0007_invitations.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel

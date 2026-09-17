@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
-import { createApiKey, createStoredFile, deleteStoredFile, getAdminOverview, listApiKeys, listStoredFiles, revokeApiKey } from "./db";
+import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, listApiKeys, listInvitations, listStoredFiles, revokeApiKey, revokeInvitation } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { createAllocation, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, deleteEgg, deleteNest, deleteServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, seedCatalog, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, getServerAccess } from "./controlPlane";
@@ -50,6 +50,11 @@ export const appRouter = router({
       list: protectedProcedure.query(({ ctx }) => listApiKeys(ctx.user.id)),
       create: protectedProcedure.input(z.object({ name: z.string().min(1).max(100), scopes: z.array(z.string().min(1).max(100)).min(1).max(50) })).mutation(({ ctx, input }) => createApiKey(ctx.user.id, input.name, input.scopes)),
       revoke: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => revokeApiKey(ctx.user.id, input.id)),
+    }),
+    invitations: router({
+      list: adminProcedure.query(() => listInvitations()),
+      create: adminProcedure.input(z.object({ email: z.string().email().max(320), role: z.enum(["user", "admin"]).default("user"), expiresInHours: z.number().int().min(1).max(720).default(72) })).mutation(({ ctx, input }) => createInvitation({ email: input.email, role: input.role, createdBy: ctx.user.id, expiresAt: new Date(Date.now() + input.expiresInHours * 3600000) })),
+      revoke: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => revokeInvitation(input.id)),
     }),
   }),
   admin: router({

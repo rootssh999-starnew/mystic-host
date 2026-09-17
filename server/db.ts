@@ -1,7 +1,7 @@
 import { and, count, desc, eq, isNull, sum } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
-import { apiKeys, InsertStoredFile, InsertUser, storedFiles, users } from "../drizzle/schema";
+import { apiKeys, InsertStoredFile, InsertUser, invitations, storedFiles, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -25,7 +25,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const values: InsertUser = { openId: user.openId };
   const updateSet: Record<string, unknown> = {};
-  const textFields = ["name", "email", "loginMethod"] as const;
+  const textFields = ["name", "email", "loginMethod", "passwordHash"] as const;
   for (const field of textFields) {
     if (user[field] !== undefined) {
       const value = user[field] ?? null;
@@ -96,6 +96,40 @@ export async function revokeApiKey(userId: number, id: number) {
   if (!db) throw new Error("Database is not available");
   await db.update(apiKeys).set({ revokedAt: new Date() }).where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)));
   return { success: true } as const;
+}
+
+export async function createInvitation(input: { email: string; role: "user" | "admin"; createdBy: number; expiresAt: Date }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const token = `invite_${randomBytes(32).toString("base64url")}`;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const result = await db.insert(invitations).values({ email: input.email.toLowerCase(), role: input.role, createdBy: input.createdBy, expiresAt: input.expiresAt, tokenHash });
+  const rows = await db.select().from(invitations).where(eq(invitations.id, Number(result[0].insertId))).limit(1);
+  return { invitation: rows[0], token };
+}
+
+export async function listInvitations() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: invitations.id, email: invitations.email, role: invitations.role, expiresAt: invitations.expiresAt, acceptedAt: invitations.acceptedAt, revokedAt: invitations.revokedAt, createdAt: invitations.createdAt }).from(invitations).orderBy(desc(invitations.id));
+}
+
+export async function revokeInvitation(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(invitations).set({ revokedAt: new Date() }).where(eq(invitations.id, id));
+  return { success: true } as const;
+}
+
+export async function consumeInvitation(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const rows = await db.select().from(invitations).where(and(eq(invitations.tokenHash, tokenHash), isNull(invitations.acceptedAt), isNull(invitations.revokedAt))).limit(1);
+  const invitation = rows[0];
+  if (!invitation || invitation.expiresAt.getTime() <= Date.now()) return undefined;
+  await db.update(invitations).set({ acceptedAt: new Date() }).where(eq(invitations.id, invitation.id));
+  return invitation;
 }
 
 export async function listStoredFiles(userId: number, serverName: string) {

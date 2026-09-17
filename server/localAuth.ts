@@ -20,6 +20,20 @@ export function verifyPassword(password: string, encoded: string) {
 }
 
 export function registerLocalAuthRoutes(app: Express) {
+  app.post("/api/local/invitations/accept", async (req: Request, res: Response) => {
+    const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 120) : "";
+    if (!token || password.length < 12 || password.length > 256) return res.status(400).json({ error: "A valid invitation token and password of at least 12 characters are required" });
+    const invitation = await db.consumeInvitation(token);
+    if (!invitation) return res.status(400).json({ error: "Invitation is invalid, expired, used, or revoked" });
+    if (await db.getUserByEmail(invitation.email)) return res.status(409).json({ error: "An account already exists for this email" });
+    const openId = `local:${invitation.email}`;
+    await db.upsertUser({ openId, email: invitation.email, name: name || invitation.email.split("@")[0], passwordHash: hashPassword(password), loginMethod: "invitation", role: invitation.role });
+    const sessionToken = await sdk.createSessionToken(openId, { name: name || invitation.email, expiresInMs: ONE_YEAR_MS });
+    res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
+    return res.json({ success: true });
+  });
   app.post("/api/local/login", async (req: Request, res: Response) => {
     const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
     const password = typeof req.body?.password === "string" ? req.body.password : "";
