@@ -1,5 +1,6 @@
 export const SERVER_PERMISSIONS = [
   "control",
+  "settings.update",
   "console",
   "file.read",
   "file.write",

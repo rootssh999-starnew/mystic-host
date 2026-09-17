@@ -5,7 +5,7 @@ import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, getStoredFile, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDeleteBackup, nodeDeleteDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeResources, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
-import { acquireServerOperation, addTeamMember, createAllocation, createBackupRecord, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerDatabase, deleteServerUser, deleteTeamMember, getNode, getNodeCapacity, getServerDatabase, listAllocations, listBackups, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodeCapacities, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, releaseServerOperation, seedCatalog, updateBackupRecord, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerDatabase, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
+import { acquireServerOperation, addTeamMember, createAllocation, createBackupRecord, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerDatabase, deleteServerUser, deleteTeamMember, getNode, getNodeCapacity, getServerDatabase, listAllocations, listBackups, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodeCapacities, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, releaseServerOperation, seedCatalog, updateBackupRecord, updateEgg, updateJob, updateNest, updatePersistentServer, updateScheduleEnabled, updateNodeStatus, updateServerDatabase, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -202,6 +202,13 @@ export const appRouter = router({
     nodeConfig: adminProcedure.input(z.object({ nodeId: z.number().int().positive() })).query(async ({ input }) => { const node = await getNode(input.nodeId); return { debug: false, uuid: String(node.id), token: node.daemonToken, api: { host: "0.0.0.0", port: node.daemonPort, ssl: { enabled: node.scheme === "https", cert: `/etc/letsencrypt/live/${node.fqdn}/fullchain.pem`, key: `/etc/letsencrypt/live/${node.fqdn}/privkey.pem` }, upload_limit: 100 }, system: { data: "/var/lib/mystic-host/volumes", sftp: { bind_port: node.sftpPort } }, remote: `${node.scheme}://${node.fqdn}` }; }),
   }),
   node: router({
+    updateSettings: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48), serverName: z.string().min(2).max(100).optional(), startup: z.string().min(1).max(500).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const server = await requireServerPermission(ctx, input.name, "settings.update");
+        const updated = await updatePersistentServer(server.id, { name: input.serverName, startup: input.startup });
+        return { success: true, server: updated };
+      }),
     action: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), action: z.enum(["start", "stop", "restart"]) }))
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "control"); return nodeAction(input.name, input.action); }),
