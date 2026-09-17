@@ -5,7 +5,7 @@ import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
-import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerUsers, listServers, seedCatalog, updateScheduleEnabled, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
+import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, seedCatalog, updateScheduleEnabled, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -115,6 +115,9 @@ export const appRouter = router({
     downloadFile: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), path: z.string().min(1).max(500) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeDownloadFile(input.name, input.path); }),
+    members: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48) }))
+      .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); return listServerMembers(server.id); }),
     schedules: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); return listSchedules(server.id); }),

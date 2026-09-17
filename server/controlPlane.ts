@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
-import { allocations, backups, databaseHosts, eggs, locations, nests, nodes, schedules, serverDatabases, serverUsers, servers } from "../drizzle/schema";
+import { allocations, backups, databaseHosts, eggs, locations, nests, nodes, schedules, serverDatabases, serverUsers, servers, users } from "../drizzle/schema";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -165,6 +165,16 @@ export async function listBackups(serverId: number) {
   return db.select().from(backups).where(eq(backups.serverId, serverId)).orderBy(desc(backups.id));
 }
 
+export async function listServerMembers(serverId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ membership: serverUsers, user: users }).from(serverUsers).innerJoin(users, eq(serverUsers.userId, users.id)).where(eq(serverUsers.serverId, serverId)).orderBy(desc(serverUsers.id));
+  return rows.map(({ membership, user }) => {
+    let permissions: string[] = [];
+    try { permissions = JSON.parse(membership.permissionsJson) as string[]; } catch { permissions = []; }
+    return { id: membership.id, userId: user.id, name: user.name, email: user.email, role: user.role, permissions, createdAt: membership.createdAt };
+  });
+}
 export async function listServerUsers(serverId: number) {
   const db = await getDb();
   if (!db) return [];
