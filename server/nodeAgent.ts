@@ -72,6 +72,8 @@ export function nodeDownloadFile(name: string, relativePath: string) {
 export function nodeCreateDatabase(name: string, database: string, username: string, password: string) {
   return request<{ name: string; username: string; host: string; port: number }>(`/v1/servers/${encodeURIComponent(name)}/databases`, { method: "POST", body: JSON.stringify({ name: database, username, password }) });
 }
+export function nodeDeleteDatabase(name: string, database: string) { return request<{ success: boolean; database: string }>(`/v1/servers/${encodeURIComponent(name)}/databases/${encodeURIComponent(database)}`, { method: "DELETE" }); }
+export function nodeRotateDatabasePassword(name: string, database: string, username: string, oldPassword: string, newPassword: string) { return request<{ success: boolean; database: string; username: string }>(`/v1/servers/${encodeURIComponent(name)}/databases/${encodeURIComponent(database)}/rotate-password`, { method: "POST", body: JSON.stringify({ username, oldPassword, newPassword }) }); }
 export function nodeUploadFile(name: string, filePath: string, data: Buffer) {
   return request<{ success: boolean; path: string; size: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, {
     method: "POST",

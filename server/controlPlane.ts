@@ -328,3 +328,17 @@ export async function createServerDatabase(input: typeof serverDatabases.$inferI
   const rows = await db.select().from(serverDatabases).where(eq(serverDatabases.id, Number(result[0].insertId))).limit(1);
   return rows[0];
 }
+
+export async function updateServerDatabase(id: number, input: Partial<Pick<typeof serverDatabases.$inferInsert, "username" | "password">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(serverDatabases).set(input).where(eq(serverDatabases.id, id));
+  const rows = await db.select().from(serverDatabases).where(eq(serverDatabases.id, id)).limit(1);
+  return rows[0];
+}
+export async function deleteServerDatabase(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.delete(serverDatabases).where(eq(serverDatabases.id, id));
+  return { success: true } as const;
+}

@@ -1,10 +1,10 @@
 import type { Express, Request, Response } from "express";
 import { authenticateApiToken, getDb } from "./db";
-import { servers } from "../drizzle/schema";
+import { serverDatabases, servers } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
-import { nodeAction, nodeBackups, nodeCompleteUpload, nodeCreateArchive, nodeCreateBackup, nodeCreateFolder, nodeDeleteBackup, nodeDeleteFile, nodeDownloadFile, nodeInitUpload, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadChunk, nodeUploadFile } from "./nodeAgent";
+import { nodeAction, nodeBackups, nodeCompleteUpload, nodeCreateArchive, nodeCreateBackup, nodeCreateDatabase, nodeCreateFolder, nodeDeleteBackup, nodeDeleteDatabase, nodeDeleteFile, nodeDownloadFile, nodeInitUpload, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadChunk, nodeUploadFile } from "./nodeAgent";
 import { createManagedNodeServer, deleteNodeServer } from "./nodeAgent";
-import { createJob, createPersistentServer, deletePersistentServer, updateJob, updatePersistentServer } from "./controlPlane";
+import { createJob, createPersistentServer, createServerDatabase, deletePersistentServer, deleteServerDatabase, updateJob, updatePersistentServer, updateServerDatabase } from "./controlPlane";
 
 const requestBuckets = new Map<string, { started: number; count: number }>();
 
@@ -235,6 +235,44 @@ export function registerApiRoutes(app: Express) {
     const name = typeof req.body?.name === "string" ? req.body.name : ""; if (!name) return error(res, 422, "Validation Error", "name is required.");
     const job = await createJob({ serverId: server.id, type: "backup.restore", payload: { name } }); await updateJob(job.id, { status: "running", progress: 10, message: "Restoring backup" });
     try { const result = await nodeRestoreBackup(server.identifier, name, typeof req.body?.checksum === "string" ? req.body.checksum : undefined); await updateJob(job.id, { status: "completed", progress: 100, message: "Backup restored", result }); return res.status(202).json({ job: job.id, ...result }); } catch (e) { await updateJob(job.id, { status: "failed", progress: 100, message: "Restore failed", error: e instanceof Error ? e.message : "Restore failed" }); return error(res, 502, "Node Error", e instanceof Error ? e.message : "Restore failed"); }
+  });
+
+  app.get(["/api/client/servers/:identifier/databases", "/api/client/v1/servers/:identifier/databases", "/api/application/servers/:identifier/databases", "/api/application/v1/servers/:identifier/databases"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth; if (!auth || !hasScope(auth.scopes, "databases.read")) return error(res, 403, "Forbidden", "The API token lacks the databases.read scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const databases = await db.select({ id: serverDatabases.id, name: serverDatabases.name, username: serverDatabases.username, hostId: serverDatabases.hostId, createdAt: serverDatabases.createdAt }).from(serverDatabases).where(eq(serverDatabases.serverId, server.id));
+    return res.json({ object: "list", data: databases.map((database) => ({ object: "database", attributes: database })) });
+  });
+
+  app.post(["/api/client/servers/:identifier/databases", "/api/client/v1/servers/:identifier/databases", "/api/application/servers/:identifier/databases", "/api/application/v1/servers/:identifier/databases"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth; if (!auth || !hasScope(auth.scopes, "databases.create")) return error(res, 403, "Forbidden", "The API token lacks the databases.create scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const name = typeof req.body?.name === "string" ? req.body.name : ""; const username = typeof req.body?.username === "string" ? req.body.username : "app"; const password = typeof req.body?.password === "string" ? req.body.password : ""; const hostId = Number(req.body?.host_id || 0);
+    if (!name || !password || !hostId) return error(res, 422, "Validation Error", "name, password, and host_id are required.");
+    try { const result = await nodeCreateDatabase(server.identifier, name, username, password); const record = await createServerDatabase({ serverId: server.id, hostId, name, username, password }); return res.status(201).json({ object: "database", attributes: { id: record.id, name: record.name, username: record.username, host: result.host, port: result.port } }); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "Database creation failed."); }
+  });
+
+  app.delete(["/api/client/servers/:identifier/databases/:database", "/api/client/v1/servers/:identifier/databases/:database", "/api/application/servers/:identifier/databases/:database", "/api/application/v1/servers/:identifier/databases/:database"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth; if (!auth || !hasScope(auth.scopes, "databases.delete")) return error(res, 403, "Forbidden", "The API token lacks the databases.delete scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const records = await db.select().from(serverDatabases).where(eq(serverDatabases.serverId, server.id)); const record = records.find((item) => item.name === req.params.database); if (!record) return error(res, 404, "Not Found", "Database not found.");
+    try { await nodeDeleteDatabase(server.identifier, record.name); await deleteServerDatabase(record.id); return res.json({ success: true }); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "Database deletion failed."); }
+  });
+
+  app.post(["/api/client/servers/:identifier/databases/:database/rotate-password", "/api/client/v1/servers/:identifier/databases/:database/rotate-password", "/api/application/servers/:identifier/databases/:database/rotate-password", "/api/application/v1/servers/:identifier/databases/:database/rotate-password"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth; if (!auth || !hasScope(auth.scopes, "databases.update")) return error(res, 403, "Forbidden", "The API token lacks the databases.update scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const records = await db.select().from(serverDatabases).where(eq(serverDatabases.serverId, server.id)); const record = records.find((item) => item.name === req.params.database); if (!record) return error(res, 404, "Not Found", "Database not found.");
+    const oldPassword = String(req.body?.old_password || ""); const newPassword = String(req.body?.new_password || ""); if (!oldPassword || newPassword.length < 12) return error(res, 422, "Validation Error", "Valid old_password and new_password are required.");
+    try { const result = await nodeRotateDatabasePassword(server.identifier, record.name, record.username, oldPassword, newPassword); await updateServerDatabase(record.id, { password: newPassword }); return res.json(result); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "Password rotation failed."); }
   });
 
   app.get(["/api/client/servers/:identifier/resources", "/api/client/v1/servers/:identifier/resources", "/api/application/servers/:identifier/resources", "/api/application/v1/servers/:identifier/resources"], async (req: ApiRequest, res) => {

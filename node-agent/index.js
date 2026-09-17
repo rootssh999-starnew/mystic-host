@@ -248,6 +248,24 @@ async function handle(req, res) {
     await docker(["run", "-d", "--name", dbContainer, "--restart", "unless-stopped", "-e", `MYSQL_DATABASE=${database}`, "-e", `MYSQL_USER=${username}`, "-e", `MYSQL_PASSWORD=${password}`, "-e", `MYSQL_ROOT_PASSWORD=${password}`, "-v", `${volume}:/var/lib/mysql`, "mysql:8.4"]);
     return send(res, 201, { name: database, username, host: dbContainer, port: 3306 });
   }
+  if (req.method === "POST" && parts[3] === "databases" && parts[5] === "rotate-password") {
+    const database = safeName(parts[4]);
+    const username = safeName(input.username || "app");
+    const oldPassword = String(input.oldPassword || "");
+    const newPassword = String(input.newPassword || "");
+    if (newPassword.length < 12 || oldPassword.length < 1) throw new Error("Valid old and new passwords are required");
+    const dbContainer = `mystic-host-db-${name}-${database}`;
+    const escapedUser = username.replace(/`/g, "");
+    await docker(["exec", dbContainer, "mysql", "-uroot", `-p${oldPassword}`, "-e", `ALTER USER '${escapedUser}'@'%' IDENTIFIED BY '${newPassword.replace(/'/g, "''")}'; FLUSH PRIVILEGES;`]);
+    return send(res, 200, { success: true, database, username });
+  }
+  if (req.method === "DELETE" && parts[3] === "databases" && parts.length === 5) {
+    const database = safeName(parts[4]);
+    const dbContainer = `mystic-host-db-${name}-${database}`;
+    await docker(["rm", "-f", dbContainer]).catch(() => {});
+    await rm(path.join(serverRoot, ".databases", database), { recursive: true, force: true });
+    return send(res, 200, { success: true, database });
+  }
   if (req.method === "GET" && parts[3] === "files" && parts.length >= 5) {
     const relative = safeRelativePath(parts.slice(4).join("/"));
     const target = path.join(serverRoot, relative);
