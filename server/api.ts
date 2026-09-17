@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { authenticateApiToken, getDb } from "./db";
 import { servers } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
-import { nodeAction, nodeCreateFolder, nodeDeleteFile, nodeDownloadFile, nodeListFiles, nodeUploadFile } from "./nodeAgent";
+import { nodeAction, nodeCreateFolder, nodeDeleteFile, nodeDownloadFile, nodeListFiles, nodeLogs, nodeStats, nodeUploadFile } from "./nodeAgent";
 import { createManagedNodeServer, deleteNodeServer } from "./nodeAgent";
 import { createPersistentServer, deletePersistentServer, updatePersistentServer } from "./controlPlane";
 
@@ -171,5 +171,32 @@ export function registerApiRoutes(app: Express) {
     const filePath = typeof req.body?.path === "string" ? req.body.path : typeof req.query.path === "string" ? req.query.path : "";
     if (!filePath) return error(res, 422, "Validation Error", "path is required.");
     try { return res.json(await nodeDeleteFile(server.identifier, filePath)); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "File deletion failed."); }
+  });
+
+  app.get(["/api/client/servers/:identifier/resources", "/api/client/v1/servers/:identifier/resources", "/api/application/servers/:identifier/resources", "/api/application/v1/servers/:identifier/resources"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "resources.read")) return error(res, 403, "Forbidden", "The API token lacks the resources.read scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    if (!rows[0] || (!req.path.startsWith("/api/application") && rows[0].ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    try { return res.json({ object: "resources", attributes: await nodeStats(rows[0].identifier) }); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "Resource query failed."); }
+  });
+
+  app.get(["/api/client/servers/:identifier/console", "/api/client/v1/servers/:identifier/console", "/api/application/servers/:identifier/console", "/api/application/v1/servers/:identifier/console"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "console.read")) return error(res, 403, "Forbidden", "The API token lacks the console.read scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    if (!rows[0] || (!req.path.startsWith("/api/application") && rows[0].ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    res.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    let previous = "";
+    const push = async () => { try { const result = await nodeLogs(rows[0].identifier); if (result.logs !== previous) { previous = result.logs; res.write(`event: console\ndata: ${JSON.stringify({ logs: result.logs })}\n\n`); } } catch (e) { res.write(`event: error\ndata: ${JSON.stringify({ error: e instanceof Error ? e.message : "Console stream failed" })}\n\n`); } };
+    await push();
+    const timer = setInterval(push, 2000);
+    const close = () => { clearInterval(timer); res.end(); };
+    req.on("close", close);
+    setTimeout(close, 30_000);
   });
 }
