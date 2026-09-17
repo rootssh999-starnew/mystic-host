@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { authenticateApiToken, getDb } from "./db";
 import { servers } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
-import { nodeAction, nodeCompleteUpload, nodeCreateArchive, nodeCreateFolder, nodeDeleteFile, nodeDownloadFile, nodeInitUpload, nodeListFiles, nodeLogs, nodeStats, nodeUploadChunk, nodeUploadFile } from "./nodeAgent";
+import { nodeAction, nodeBackups, nodeCompleteUpload, nodeCreateArchive, nodeCreateBackup, nodeCreateFolder, nodeDeleteBackup, nodeDeleteFile, nodeDownloadFile, nodeInitUpload, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadChunk, nodeUploadFile } from "./nodeAgent";
 import { createManagedNodeServer, deleteNodeServer } from "./nodeAgent";
 import { createJob, createPersistentServer, deletePersistentServer, updateJob, updatePersistentServer } from "./controlPlane";
 
@@ -195,6 +195,46 @@ export function registerApiRoutes(app: Express) {
     await updateJob(job.id, { status: "running", progress: 10, message: "Creating archive" });
     try { const result = await nodeCreateArchive(server.identifier, source, typeof req.body?.output === "string" ? req.body.output : undefined); await updateJob(job.id, { status: "completed", progress: 100, message: "Archive created", result }); return res.status(202).json({ job: job.id, ...result }); }
     catch (e) { await updateJob(job.id, { status: "failed", progress: 100, message: "Archive failed", error: e instanceof Error ? e.message : "Archive failed" }); return error(res, 502, "Node Error", e instanceof Error ? e.message : "Archive failed"); }
+  });
+
+  app.get(["/api/client/servers/:identifier/backups", "/api/client/v1/servers/:identifier/backups", "/api/application/servers/:identifier/backups", "/api/application/v1/servers/:identifier/backups"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "backups.read")) return error(res, 403, "Forbidden", "The API token lacks the backups.read scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    try { const result = await nodeBackups(server.identifier); return res.json({ object: "list", data: result.backups.map((backup) => ({ object: "backup", attributes: backup })) }); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "Backup listing failed."); }
+  });
+
+  app.post(["/api/client/servers/:identifier/backups", "/api/client/v1/servers/:identifier/backups", "/api/application/servers/:identifier/backups", "/api/application/v1/servers/:identifier/backups"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "backups.create")) return error(res, 403, "Forbidden", "The API token lacks the backups.create scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const job = await createJob({ serverId: server.id, type: "backup.create", payload: {} }); await updateJob(job.id, { status: "running", progress: 10, message: "Creating backup" });
+    try { const result = await nodeCreateBackup(server.identifier); await updateJob(job.id, { status: "completed", progress: 100, message: "Backup created", result }); return res.status(202).json({ job: job.id, ...result }); } catch (e) { await updateJob(job.id, { status: "failed", progress: 100, message: "Backup failed", error: e instanceof Error ? e.message : "Backup failed" }); return error(res, 502, "Node Error", e instanceof Error ? e.message : "Backup failed"); }
+  });
+
+  app.delete(["/api/client/servers/:identifier/backups", "/api/client/v1/servers/:identifier/backups", "/api/application/servers/:identifier/backups", "/api/application/v1/servers/:identifier/backups"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "backups.delete")) return error(res, 403, "Forbidden", "The API token lacks the backups.delete scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const name = typeof req.body?.name === "string" ? req.body.name : ""; if (!name) return error(res, 422, "Validation Error", "name is required.");
+    try { return res.json(await nodeDeleteBackup(server.identifier, name)); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "Backup deletion failed."); }
+  });
+
+  app.post(["/api/client/servers/:identifier/backups/restore", "/api/client/v1/servers/:identifier/backups/restore", "/api/application/servers/:identifier/backups/restore", "/api/application/v1/servers/:identifier/backups/restore"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "backups.restore")) return error(res, 403, "Forbidden", "The API token lacks the backups.restore scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const name = typeof req.body?.name === "string" ? req.body.name : ""; if (!name) return error(res, 422, "Validation Error", "name is required.");
+    const job = await createJob({ serverId: server.id, type: "backup.restore", payload: { name } }); await updateJob(job.id, { status: "running", progress: 10, message: "Restoring backup" });
+    try { const result = await nodeRestoreBackup(server.identifier, name, typeof req.body?.checksum === "string" ? req.body.checksum : undefined); await updateJob(job.id, { status: "completed", progress: 100, message: "Backup restored", result }); return res.status(202).json({ job: job.id, ...result }); } catch (e) { await updateJob(job.id, { status: "failed", progress: 100, message: "Restore failed", error: e instanceof Error ? e.message : "Restore failed" }); return error(res, 502, "Node Error", e instanceof Error ? e.message : "Restore failed"); }
   });
 
   app.get(["/api/client/servers/:identifier/resources", "/api/client/v1/servers/:identifier/resources", "/api/application/servers/:identifier/resources", "/api/application/v1/servers/:identifier/resources"], async (req: ApiRequest, res) => {

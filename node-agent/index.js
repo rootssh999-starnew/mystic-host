@@ -194,7 +194,8 @@ async function handle(req, res) {
     const backups = await Promise.all(entries.filter((entry) => entry.isFile() && entry.name.endsWith(".tar.gz")).map(async (entry) => {
       const file = path.join(backupDir, entry.name);
       const details = await stat(file);
-      return { name: entry.name, bytes: details.size, createdAt: details.mtime.toISOString() };
+      const checksum = createHash("sha256").update(await readFile(file)).digest("hex");
+      return { name: entry.name, bytes: details.size, checksum, createdAt: details.mtime.toISOString() };
     }));
     return send(res, 200, { backups });
   }
@@ -204,15 +205,24 @@ async function handle(req, res) {
     const name = `backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz`;
     await exec("tar", ["-czf", path.join(backupDir, name), "--exclude=.backups", "-C", serverRoot, "."]);
     const details = await stat(path.join(backupDir, name));
-    return send(res, 201, { name, bytes: details.size, createdAt: details.mtime.toISOString() });
+    const checksum = createHash("sha256").update(await readFile(path.join(backupDir, name))).digest("hex");
+    return send(res, 201, { name, bytes: details.size, checksum, createdAt: details.mtime.toISOString() });
+  }
+  if (req.method === "DELETE" && parts[3] === "backups" && parts.length === 5) {
+    const backupName = safeRelativePath(parts[4]);
+    if (!backupName.startsWith(".backups/") || !backupName.endsWith(".tar.gz")) throw new Error("Invalid backup name");
+    await rm(path.join(serverRoot, backupName), { force: true });
+    return send(res, 200, { success: true, name: backupName });
   }
   if (req.method === "POST" && parts[3] === "restore") {
     const backupName = safeRelativePath(input.name || "");
     if (!backupName.startsWith(".backups/") || !backupName.endsWith(".tar.gz")) throw new Error("Invalid backup name");
     const archive = path.join(serverRoot, backupName);
     await stat(archive);
+    const checksum = createHash("sha256").update(await readFile(archive)).digest("hex");
+    if (input.checksum && input.checksum !== checksum) throw new Error("Backup checksum mismatch");
     await exec("tar", ["-xzf", archive, "--strip-components=1", "-C", serverRoot, "--exclude=.backups"]);
-    return send(res, 200, { success: true, name: backupName });
+    return send(res, 200, { success: true, name: backupName, checksum });
   }
   if (req.method === "GET" && parts[3] === "files" && parts.length === 4) {
     const rawPath = url.searchParams.get("path");

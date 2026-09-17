@@ -51,13 +51,16 @@ export function nodeInstallStatus(name: string) {
 }
 export function nodeCancelInstall(name: string) { return request<{ name: string; status: string; preservedVolume: boolean }>(`/v1/servers/${encodeURIComponent(name)}/cancel-install`, { method: "POST" }); }
 export function nodeBackups(name: string) {
-  return request<{ backups: Array<{ name: string; bytes: number; createdAt: string }> }>(`/v1/servers/${encodeURIComponent(name)}/backups`);
+  return request<{ backups: Array<{ name: string; bytes: number; checksum: string; createdAt: string }> }>(`/v1/servers/${encodeURIComponent(name)}/backups`);
 }
 export function nodeCreateBackup(name: string) {
-  return request<{ name: string; bytes: number; createdAt: string }>(`/v1/servers/${encodeURIComponent(name)}/backups`, { method: "POST" });
+  return request<{ name: string; bytes: number; checksum: string; createdAt: string }>(`/v1/servers/${encodeURIComponent(name)}/backups`, { method: "POST" });
 }
-export function nodeRestoreBackup(name: string, backupName: string) {
-  return request<{ success: boolean; name: string }>(`/v1/servers/${encodeURIComponent(name)}/restore`, { method: "POST", body: JSON.stringify({ name: backupName }) });
+export function nodeDeleteBackup(name: string, backupName: string) {
+  return request<{ success: boolean; name: string }>(`/v1/servers/${encodeURIComponent(name)}/backups/${backupName.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" });
+}
+export function nodeRestoreBackup(name: string, backupName: string, checksum?: string) {
+  return request<{ success: boolean; name: string; checksum: string }>(`/v1/servers/${encodeURIComponent(name)}/restore`, { method: "POST", body: JSON.stringify({ name: backupName, checksum }) });
 }
 export function nodeListFiles(name: string, relativePath?: string) {
   const query = relativePath ? `?path=${encodeURIComponent(relativePath)}` : "";
