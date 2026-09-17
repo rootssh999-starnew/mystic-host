@@ -322,6 +322,22 @@ export async function listBackups(serverId: number) {
   return db.select().from(backups).where(eq(backups.serverId, serverId)).orderBy(desc(backups.id));
 }
 
+export async function createBackupRecord(serverId: number, name = `pending-${Date.now()}`) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(backups).values({ serverId, name, archivePath: `.backups/${name}`, status: "pending" });
+  const rows = await db.select().from(backups).where(eq(backups.id, Number(result[0].insertId))).limit(1);
+  return rows[0];
+}
+
+export async function updateBackupRecord(id: number, input: { name?: string; archivePath?: string; checksum?: string | null; bytes?: number; status?: "pending" | "running" | "completed" | "failed" }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(backups).set(input).where(eq(backups.id, id));
+  const rows = await db.select().from(backups).where(eq(backups.id, id)).limit(1);
+  return rows[0];
+}
+
 export async function listServerMembers(serverId: number) {
   const db = await getDb();
   if (!db) return [];
