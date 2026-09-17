@@ -260,11 +260,11 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  const grouped = useMemo(() => ({ Manage: navItems.filter((item) => item.group === "Manage"), Configure: navItems.filter((item) => item.group === "Configure") }), []);
   if (loading) return <div className="auth-screen"><div className="auth-card"><h1>Loading MYSTIC HOST…</h1></div></div>;
   if (!user) return <HomeLogin />;
 
   const action = (message: string) => toast(message, { description: "This control plane action is ready to connect to your runtime API." });
-  const grouped = useMemo(() => ({ Manage: navItems.filter((item) => item.group === "Manage"), Configure: navItems.filter((item) => item.group === "Configure") }), []);
   const selectPanel = (panel: PanelKey) => { setActivePanel(panel); setSidebarOpen(false); };
   const powerAction = (next: "start" | "stop" | "restart") => {
     toast(`${next[0].toUpperCase()}${next.slice(1)}ing ${activeServer.name}…`, { description: "Calling the live Docker node." });
