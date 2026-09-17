@@ -22,6 +22,9 @@ export type NodeServer = { name: string; status: string; running: boolean; image
 export function nodeHealth() {
   return request<{ ok: boolean; service: string; version: string }>("/health");
 }
+export function nodeResources() {
+  return request<{ hostname: string; platform: string; arch: string; cpuCount: number; loadAverage: number[]; memoryMb: { total: number; free: number }; uptimeSeconds: number }>("/v1/resources");
+}
 export function listNodeServers() {
   return request<{ servers: NodeServer[] }>("/v1/servers");
 }

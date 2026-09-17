@@ -1,5 +1,5 @@
-import { acquireServerOperation, createScheduleRun, deleteBackupRecord, finishScheduleRun, listBackups, listEnabledSchedules, listServers, markScheduleRun, releaseServerOperation } from "./controlPlane";
-import { nodeAction, nodeCommand, nodeDeleteBackup } from "./nodeAgent";
+import { acquireServerOperation, createScheduleRun, deleteBackupRecord, finishScheduleRun, listBackups, listEnabledSchedules, listServers, markScheduleRun, releaseServerOperation, updateServerStatus } from "./controlPlane";
+import { listNodeServers, nodeAction, nodeCommand, nodeDeleteBackup } from "./nodeAgent";
 import { selectBackupsForCleanup } from "@shared/backupRetention";
 
 function matchesField(field: string, value: number) {
@@ -41,12 +41,24 @@ async function cleanupBackups(now: Date) {
   }
 }
 
+async function reconcileRuntimeStatuses() {
+  const [servers, live] = await Promise.all([listServers(), listNodeServers()]);
+  const byName = new Map(live.servers.map((item) => [item.name, item]));
+  for (const server of servers) {
+    if (!["offline", "running"].includes(server.status)) continue;
+    const actual = byName.get(server.identifier);
+    const desired = actual?.running ? "running" : "offline";
+    if (desired !== server.status) await updateServerStatus(server.id, desired);
+  }
+}
+
 export function startScheduler() {
   if (running) return;
   running = true;
   const tick = async () => {
       const now = new Date();
       try {
+        try { await reconcileRuntimeStatuses(); } catch (error) { console.error("[Scheduler] Runtime reconciliation failed", error); }
         await cleanupBackups(now);
         const rows = await listEnabledSchedules();
       for (const { schedule, server } of rows) {

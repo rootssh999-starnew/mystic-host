@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, rm, readdir, readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 
@@ -103,6 +104,10 @@ async function handle(req, res) {
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts[0] !== "v1") return send(res, 404, { error: "Not found" });
   const input = req.method === "GET" ? {} : await body(req);
+
+  if (req.method === "GET" && parts[1] === "resources" && parts.length === 2) {
+    return send(res, 200, { hostname: os.hostname(), platform: process.platform, arch: process.arch, cpuCount: os.cpus().length, loadAverage: os.loadavg(), memoryMb: { total: Math.round(os.totalmem() / 1048576), free: Math.round(os.freemem() / 1048576) }, uptimeSeconds: Math.round(os.uptime()) });
+  }
 
   if (req.method === "GET" && parts[1] === "servers" && parts.length === 2) {
     const entries = await readdir(ROOT, { withFileTypes: true }).catch(() => []);
