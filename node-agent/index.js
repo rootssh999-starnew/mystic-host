@@ -142,6 +142,23 @@ async function handle(req, res) {
     await docker(args);
     return send(res, 201, { ...(await containerInfo(name)), runtime, image, startup, installScript: Boolean(installScript), memoryMb: memory, cpu: cpus, port: port || null });
   }
+  if (req.method === "POST" && parts[3] === "reinstall") {
+    const runtime = input.runtime || "nodejs";
+    const image = String(input.image || imageForRuntime(runtime));
+    const startup = String(input.startup || "while true; do sleep 3600; done");
+    const installScript = String(input.installScript || "");
+    if (installScript.length > 100000) throw new Error("Install script is too large");
+    const memory = Math.max(128, Math.min(Number(input.memoryMb || 512), 8192));
+    const cpus = Math.max(0.1, Math.min(Number(input.cpu || 0.5), 4));
+    const port = Number(input.port || 0);
+    await docker(["rm", "-f", container]).catch(() => {});
+    const args = ["run", "-d", "--name", container, "--restart", "unless-stopped", "--memory", `${memory}m`, "--cpus", String(cpus), "-v", `${serverRoot}:/workspace`];
+    if (Number.isInteger(port) && port > 0 && port < 65536) args.push("-p", `${port}:${port}`);
+    const command = installScript ? `set -eu\nrm -f /workspace/.mystic-installed /workspace/.mystic-install-failed\nprintf installing > /workspace/.mystic-installing\ntrap 'rm -f /workspace/.mystic-installing; printf failed > /workspace/.mystic-install-failed' ERR\n${installScript}\nrm -f /workspace/.mystic-installing\nprintf installed > /workspace/.mystic-installed\nexec ${startup}` : startup;
+    args.push(image, "sh", "-lc", command);
+    await docker(args);
+    return send(res, 201, { ...(await containerInfo(name)), runtime, image, startup, installScript: Boolean(installScript), memoryMb: memory, cpu: cpus, port: port || null, rebuilt: true });
+  }
   if (req.method === "POST" && parts[3] === "start") { await docker(["start", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "POST" && parts[3] === "stop") { await docker(["stop", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "POST" && parts[3] === "restart") { await docker(["restart", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }

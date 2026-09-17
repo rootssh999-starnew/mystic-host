@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createJob, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, seedCatalog, updateJob, updateScheduleEnabled, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -115,6 +115,23 @@ export const appRouter = router({
     installStatus: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "control"); return nodeInstallStatus(input.name); }),
+    reinstall: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48) }))
+      .mutation(async ({ ctx, input }) => {
+        const server = await requireServerPermission(ctx, input.name, "control");
+        const job = await createJob({ serverId: server.id, type: "server.reinstall", payload: { identifier: server.identifier } });
+        await updateJob(job.id, { status: "running", progress: 5, message: "Recreating server container" });
+        await updateServerStatus(server.id, "installing");
+        try {
+          const result = await nodeReinstallServer({ name: server.identifier, runtime: server.runtime, image: server.image, startup: server.startup, installScript: server.installScript, memoryMb: server.memoryMb, cpu: server.cpu / 100 });
+          await updateJob(job.id, { status: "completed", progress: 50, message: "Container rebuilt; installation is running", result });
+          return result;
+        } catch (error) {
+          await updateServerStatus(server.id, "failed");
+          await updateJob(job.id, { status: "failed", progress: 100, message: "Reinstall failed", error: error instanceof Error ? error.message : "Reinstall failed" });
+          throw error;
+        }
+      }),
     backups: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "backup.read"); return nodeBackups(input.name); }),
