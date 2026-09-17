@@ -74,6 +74,54 @@ export async function listEggs(nestId?: number) {
   return db.select().from(eggs).where(nestId ? eq(eggs.nestId, nestId) : undefined).orderBy(eggs.name);
 }
 
+export async function createNest(input: { name: string; description: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(nests).values(input);
+  const rows = await db.select().from(nests).where(eq(nests.id, Number(result[0].insertId))).limit(1);
+  return rows[0];
+}
+
+export async function updateNest(id: number, input: { name?: string; description?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(nests).set(input).where(eq(nests.id, id));
+  const rows = await db.select().from(nests).where(eq(nests.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deleteNest(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const linked = await db.select({ id: eggs.id }).from(eggs).where(eq(eggs.nestId, id)).limit(1);
+  if (linked.length) throw new Error("Cannot delete a nest that still contains eggs");
+  await db.delete(nests).where(eq(nests.id, id));
+  return { success: true } as const;
+}
+
+export async function createEgg(input: typeof eggs.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(eggs).values(input);
+  const rows = await db.select().from(eggs).where(eq(eggs.id, Number(result[0].insertId))).limit(1);
+  return rows[0];
+}
+
+export async function updateEgg(id: number, input: Partial<Pick<typeof eggs.$inferInsert, "nestId" | "name" | "slug" | "image" | "startup" | "installScript" | "environmentJson">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(eggs).set(input).where(eq(eggs.id, id));
+  const rows = await db.select().from(eggs).where(eq(eggs.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deleteEgg(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.delete(eggs).where(eq(eggs.id, id));
+  return { success: true } as const;
+}
+
 export async function seedCatalog() {
   const db = await getDb();
   if (!db) return;
