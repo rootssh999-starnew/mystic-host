@@ -36,7 +36,7 @@ rm -rf "$PANEL_DIR/dist.previous"
 if [[ -d "$PANEL_DIR/dist" ]]; then mv "$PANEL_DIR/dist" "$PANEL_DIR/dist.previous"; fi
 mv "$PANEL_DIR/dist.new" "$PANEL_DIR/dist"
 cd "$PANEL_DIR"
-npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund >/tmp/mystic-host-panel-upgrade-npm.log
+pnpm install --frozen-lockfile --ignore-scripts >/tmp/mystic-host-panel-upgrade-pnpm.log
 chown -R ubuntu:ubuntu "$PANEL_DIR"
 systemctl restart mystic-host-panel
 sleep 2
