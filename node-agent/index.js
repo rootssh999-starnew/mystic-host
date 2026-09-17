@@ -248,6 +248,11 @@ async function handle(req, res) {
     return send(res, 200, { path: relative, bytes: details.size, dataBase64: data.toString("base64") });
   }
   if (req.method === "POST" && parts[3] === "files") {
+    if (input.action === "create-folder") {
+      const relative = safeRelativePath(input.path);
+      await mkdir(path.join(serverRoot, relative), { recursive: false });
+      return send(res, 201, { success: true, path: relative, directory: true });
+    }
     const relative = safeRelativePath(input.path);
     const target = path.join(serverRoot, relative);
     const data = Buffer.from(String(input.dataBase64 || ""), "base64");
@@ -255,6 +260,12 @@ async function handle(req, res) {
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, data);
     return send(res, 201, { success: true, path: relative, size: data.byteLength });
+  }
+  if (req.method === "DELETE" && parts[3] === "files" && parts.length >= 5) {
+    const relative = safeRelativePath(parts.slice(4).join("/"));
+    if (relative === "." || relative === "") throw new Error("Cannot delete the server root");
+    await rm(path.join(serverRoot, relative), { recursive: true, force: false });
+    return send(res, 200, { success: true, path: relative });
   }
   if (req.method === "POST" && parts[3] === "extract") {
     const archive = path.join(serverRoot, safeRelativePath(input.archive));

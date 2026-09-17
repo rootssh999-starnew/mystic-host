@@ -75,6 +75,12 @@ export function nodeUploadFile(name: string, filePath: string, data: Buffer) {
     body: JSON.stringify({ path: filePath, dataBase64: data.toString("base64") }),
   });
 }
+export function nodeCreateFolder(name: string, folderPath: string) {
+  return request<{ success: boolean; path: string; directory: boolean }>(`/v1/servers/${encodeURIComponent(name)}/files`, { method: "POST", body: JSON.stringify({ action: "create-folder", path: folderPath }) });
+}
+export function nodeDeleteFile(name: string, filePath: string) {
+  return request<{ success: boolean; path: string }>(`/v1/servers/${encodeURIComponent(name)}/files/${filePath.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" });
+}
 export function nodeExtractZip(name: string, archive: string) {
   return request<{ success: boolean }>(`/v1/servers/${encodeURIComponent(name)}/extract`, {
     method: "POST",

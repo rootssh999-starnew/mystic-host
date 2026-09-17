@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { authenticateApiToken, getDb } from "./db";
 import { servers } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
-import { nodeAction } from "./nodeAgent";
+import { nodeAction, nodeCreateFolder, nodeDeleteFile, nodeDownloadFile, nodeListFiles, nodeUploadFile } from "./nodeAgent";
 import { createManagedNodeServer, deleteNodeServer } from "./nodeAgent";
 import { createPersistentServer, deletePersistentServer, updatePersistentServer } from "./controlPlane";
 
@@ -118,5 +118,58 @@ export function registerApiRoutes(app: Express) {
     await deleteNodeServer(rows[0].identifier).catch(() => {});
     await deletePersistentServer(rows[0].id);
     return res.status(204).end();
+  });
+
+  app.get(["/api/client/servers/:identifier/files", "/api/client/v1/servers/:identifier/files", "/api/application/servers/:identifier/files", "/api/application/v1/servers/:identifier/files"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "files.read")) return error(res, 403, "Forbidden", "The API token lacks the files.read scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    try { const result = await nodeListFiles(server.identifier, typeof req.query.path === "string" ? req.query.path : undefined); return res.json({ object: "list", data: result.files.map((file) => ({ object: "file", attributes: file })) }); }
+    catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "File listing failed."); }
+  });
+
+  app.get(["/api/client/servers/:identifier/files/download", "/api/client/v1/servers/:identifier/files/download", "/api/application/servers/:identifier/files/download", "/api/application/v1/servers/:identifier/files/download"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "files.read")) return error(res, 403, "Forbidden", "The API token lacks the files.read scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const filePath = typeof req.query.file === "string" ? req.query.file : "";
+    if (!filePath) return error(res, 422, "Validation Error", "file is required.");
+    try { const result = await nodeDownloadFile(server.identifier, filePath); res.type("application/octet-stream").setHeader("Content-Disposition", `attachment; filename="${filePath.split("/").pop()?.replace(/[^a-zA-Z0-9._-]/g, "_") || "download"}"`); return res.send(Buffer.from(result.dataBase64, "base64")); }
+    catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "File download failed."); }
+  });
+
+  app.post(["/api/client/servers/:identifier/files", "/api/client/v1/servers/:identifier/files", "/api/application/servers/:identifier/files", "/api/application/v1/servers/:identifier/files"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "files.write")) return error(res, 403, "Forbidden", "The API token lacks the files.write scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const filePath = typeof req.body?.path === "string" ? req.body.path : "";
+    if (!filePath) return error(res, 422, "Validation Error", "path is required.");
+    try { const result = req.body?.action === "create-folder" ? await nodeCreateFolder(server.identifier, filePath) : await nodeUploadFile(server.identifier, filePath, Buffer.from(String(req.body?.dataBase64 || ""), "base64")); return res.status(201).json(result); }
+    catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "File write failed."); }
+  });
+
+  app.delete(["/api/client/servers/:identifier/files", "/api/client/v1/servers/:identifier/files", "/api/application/servers/:identifier/files", "/api/application/v1/servers/:identifier/files"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "files.write")) return error(res, 403, "Forbidden", "The API token lacks the files.write scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const filePath = typeof req.body?.path === "string" ? req.body.path : typeof req.query.path === "string" ? req.query.path : "";
+    if (!filePath) return error(res, 422, "Validation Error", "path is required.");
+    try { return res.json(await nodeDeleteFile(server.identifier, filePath)); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "File deletion failed."); }
   });
 }
