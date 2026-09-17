@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
-import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, schedules, serverDatabases, serverUsers, servers, users } from "../drizzle/schema";
+import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, scheduleRuns, schedules, serverDatabases, serverUsers, servers, users } from "../drizzle/schema";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -254,6 +254,22 @@ export async function updateScheduleEnabled(id: number, enabled: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   await db.update(schedules).set({ enabled }).where(eq(schedules.id, id));
+}
+export async function createScheduleRun(scheduleId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(scheduleRuns).values({ scheduleId, status: "running" });
+  return Number(result[0].insertId);
+}
+export async function finishScheduleRun(id: number, status: "completed" | "failed", error?: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(scheduleRuns).set({ status, error: error || null, finishedAt: new Date() }).where(eq(scheduleRuns.id, id));
+}
+export async function listScheduleRuns(scheduleId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(scheduleRuns).where(eq(scheduleRuns.scheduleId, scheduleId)).orderBy(desc(scheduleRuns.id)).limit(100);
 }
 export async function listBackups(serverId: number) {
   const db = await getDb();

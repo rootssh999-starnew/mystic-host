@@ -40,6 +40,9 @@ fi
 if [[ -f "$PANEL_DIR/drizzle/0005_api_keys.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'api_keys'" | grep -q '^api_keys$'; then
   mysql mystic_host < "$PANEL_DIR/drizzle/0005_api_keys.sql"
 fi
+if [[ -f "$PANEL_DIR/drizzle/0006_schedule_history.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'schedule_runs'" | grep -q '^schedule_runs$'; then
+  mysql mystic_host < "$PANEL_DIR/drizzle/0006_schedule_history.sql"
+fi
 
 rm -rf "$PANEL_DIR/dist.previous"
 if [[ -d "$PANEL_DIR/dist" ]]; then mv "$PANEL_DIR/dist" "$PANEL_DIR/dist.previous"; fi

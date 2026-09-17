@@ -37,6 +37,9 @@ fi
 if [[ -f /opt/mystic-host-panel/drizzle/0005_api_keys.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'api_keys'" | grep -q '^api_keys$'; then
   sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0005_api_keys.sql
 fi
+if [[ -f /opt/mystic-host-panel/drizzle/0006_schedule_history.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'schedule_runs'" | grep -q '^schedule_runs$'; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0006_schedule_history.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel
