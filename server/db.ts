@@ -213,6 +213,13 @@ export async function createStoredFile(file: InsertStoredFile) {
   return created[0];
 }
 
+export async function renameStoredFile(userId: number, id: number, originalName: string) {
+  const database = await getDb();
+  if (!database) throw new Error("Database is not available");
+  await database.update(storedFiles).set({ originalName }).where(and(eq(storedFiles.id, id), eq(storedFiles.userId, userId)));
+  const rows = await database.select().from(storedFiles).where(and(eq(storedFiles.id, id), eq(storedFiles.userId, userId))).limit(1);
+  return rows[0];
+}
 export async function deleteStoredFile(userId: number, id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");

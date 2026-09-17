@@ -2,9 +2,9 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
-import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, getStoredFile, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
+import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, getStoredFile, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, renameStoredFile, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeCreateFolder, nodeDeleteBackup, nodeDeleteDatabase, nodeDeleteFile, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeResources, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeCreateFolder, nodeDeleteBackup, nodeDeleteDatabase, nodeDeleteFile, nodeDownloadFile, nodeRenameFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeResources, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { acquireServerOperation, addTeamMember, createAllocation, createBackupRecord, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerDatabase, deleteServerUser, deleteTeamMember, getNode, getNodeCapacity, getServerDatabase, listAllocations, listBackups, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodeCapacities, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, releaseServerOperation, seedCatalog, updateBackupRecord, updateEgg, updateJob, updateNest, updatePersistentServer, updateScheduleEnabled, updateNodeStatus, updateServerDatabase, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -314,6 +314,9 @@ export const appRouter = router({
     extract: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255) }))
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeExtractZip(input.serverName, safeFileName(input.fileName)); }),
+    rename: protectedProcedure
+      .input(z.object({ id: z.number().int().positive(), newName: z.string().min(1).max(255) }))
+      .mutation(async ({ ctx, input }) => { const file = await getStoredFile(input.id); if (!file || file.userId !== ctx.user.id) throw new TRPCError({ code: "NOT_FOUND", message: "File not found" }); await requireServerPermission(ctx, file.serverName, "file.write"); const safeName = safeFileName(input.newName); await nodeRenameFile(file.serverName, safeFileName(file.originalName), safeName); return renameStoredFile(ctx.user.id, input.id, input.newName.trim()); }),
     delete: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => { const file = await getStoredFile(input.id); if (!file || file.userId !== ctx.user.id) return { success: true } as const; await requireServerPermission(ctx, file.serverName, "file.write"); await nodeDeleteFile(file.serverName, safeFileName(file.originalName)); return deleteStoredFile(ctx.user.id, input.id); }),

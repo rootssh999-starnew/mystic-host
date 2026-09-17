@@ -2,7 +2,7 @@
 import http from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, rm, readdir, readFile, writeFile, stat } from "node:fs/promises";
+import { mkdir, rm, readdir, readFile, writeFile, stat, rename } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createRequire } from "node:module";
@@ -323,6 +323,14 @@ async function handle(req, res) {
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, data);
     return send(res, 201, { success: true, path: relative, size: data.byteLength });
+  }
+  if (req.method === "POST" && parts[3] === "rename") {
+    const source = safeRelativePath(input.path);
+    const destination = safeRelativePath(input.destination);
+    if ([".", ""].includes(source) || [".", ""].includes(destination)) throw new Error("Cannot rename the server root");
+    await mkdir(path.dirname(path.join(serverRoot, destination)), { recursive: false });
+    await rename(path.join(serverRoot, source), path.join(serverRoot, destination));
+    return send(res, 200, { success: true, path: destination });
   }
   if (req.method === "DELETE" && parts[3] === "files" && parts.length >= 5) {
     const relative = safeRelativePath(parts.slice(4).join("/"));

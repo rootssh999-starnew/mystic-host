@@ -89,6 +89,7 @@ export function nodeCreateFolder(name: string, folderPath: string) {
 export function nodeInitUpload(name: string, filePath: string) { return request<{ uploadId: string; path: string; chunkSize: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, { method: "POST", body: JSON.stringify({ action: "init-upload", path: filePath }) }); }
 export function nodeUploadChunk(name: string, uploadId: string, index: number, data: Buffer) { return request<{ uploadId: string; index: number; bytes: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, { method: "POST", body: JSON.stringify({ action: "upload-chunk", uploadId, index, dataBase64: data.toString("base64") }) }); }
 export function nodeCompleteUpload(name: string, uploadId: string, filePath: string) { return request<{ success: boolean; path: string; size: number; chunks: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, { method: "POST", body: JSON.stringify({ action: "complete-upload", uploadId, path: filePath }) }); }
+export function nodeRenameFile(name: string, filePath: string, destination: string) { return request<{ success: boolean; path: string }>(`/v1/servers/${encodeURIComponent(name)}/rename`, { method: "POST", body: JSON.stringify({ path: filePath, destination }) }); }
 export function nodeDeleteFile(name: string, filePath: string) {
   return request<{ success: boolean; path: string }>(`/v1/servers/${encodeURIComponent(name)}/files/${filePath.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" });
 }
