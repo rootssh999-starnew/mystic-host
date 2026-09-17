@@ -155,7 +155,7 @@ function FilesView({ onAction, serverName }: { onAction: (action: string) => voi
   const deleteMutation = trpc.files.delete.useMutation({
     onSuccess: () => {
       void utils.files.list.invalidate({ serverName });
-      onAction("File removed from storage metadata");
+      onAction("File removed from the live workspace");
     },
     onError: (error) => onAction(error.message),
   });
