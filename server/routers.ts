@@ -5,7 +5,7 @@ import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, getStoredFile, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
-import { addTeamMember, createAllocation, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerUser, deleteTeamMember, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, seedCatalog, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
+import { acquireServerOperation, addTeamMember, createAllocation, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerUser, deleteTeamMember, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, releaseServerOperation, seedCatalog, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -150,6 +150,8 @@ export const appRouter = router({
       .input(z.object({ name: z.string().min(2).max(48) }))
       .mutation(async ({ ctx, input }) => {
         const server = await requireServerPermission(ctx, input.name, "control");
+        acquireServerOperation(server.id, "reinstall");
+        try {
         const job = await createJob({ serverId: server.id, type: "server.reinstall", payload: { identifier: server.identifier } });
         await updateJob(job.id, { status: "running", progress: 5, message: "Recreating server container" });
         await updateServerStatus(server.id, "installing");
@@ -162,24 +164,28 @@ export const appRouter = router({
           await updateJob(job.id, { status: "failed", progress: 100, message: "Reinstall failed", error: error instanceof Error ? error.message : "Reinstall failed" });
           throw error;
         }
+        } finally { releaseServerOperation(server.id); }
       }),
     cancelInstall: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .mutation(async ({ ctx, input }) => {
         const server = await requireServerPermission(ctx, input.name, "control");
+        acquireServerOperation(server.id, "cancel-install");
+        try {
         const result = await nodeCancelInstall(server.identifier);
         await updateServerStatus(server.id, "failed");
         return result;
+        } finally { releaseServerOperation(server.id); }
       }),
     backups: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "backup.read"); return nodeBackups(input.name); }),
     createBackup: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "backup.create"); return nodeCreateBackup(input.name); }),
+      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "backup.create"); acquireServerOperation(server.id, "backup-create"); try { return await nodeCreateBackup(input.name); } finally { releaseServerOperation(server.id); } }),
     restoreBackup: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), backupName: z.string().min(1).max(255) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "backup.restore"); return nodeRestoreBackup(input.name, input.backupName); }),
+      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "backup.restore"); acquireServerOperation(server.id, "backup-restore"); try { return await nodeRestoreBackup(input.name, input.backupName); } finally { releaseServerOperation(server.id); } }),
     listFiles: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), path: z.string().max(500).optional() }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeListFiles(input.name, input.path); }),

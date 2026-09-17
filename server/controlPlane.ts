@@ -7,6 +7,17 @@ import { assertServerStatusTransition, type ServerStatus } from "@shared/serverL
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
+const activeOperations = new Map<number, string>();
+
+export function acquireServerOperation(serverId: number, operation: string) {
+  const active = activeOperations.get(serverId);
+  if (active) throw new Error(`Server is busy with ${active}`);
+  activeOperations.set(serverId, operation);
+}
+
+export function releaseServerOperation(serverId: number) {
+  activeOperations.delete(serverId);
+}
 
 export async function listLocations() {
   const db = await getDb();

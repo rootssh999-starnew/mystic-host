@@ -13,6 +13,8 @@ import { registerLocalAuthRoutes } from "../localAuth";
 import { registerApiRoutes } from "../api";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { getServerAccess } from "../controlPlane";
+import { hasPermission } from "@shared/permissions";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -48,13 +50,21 @@ async function startServer() {
     try {
       const user = await sdk.authenticateRequest(req);
       if (!user) return res.status(401).end();
+      const access = await getServerAccess(req.params.name, user.id, user.role);
+      if (!hasPermission(access.permissions, "console")) return res.status(403).end();
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+      res.write(`event: ready\ndata: ${JSON.stringify({ server: access.server.identifier })}\n\n`);
+      let polling = false;
       const send = async () => {
+        if (polling || res.writableEnded) return;
+        polling = true;
         try { const result = await nodeLogs(req.params.name); res.write(`event: logs\ndata: ${JSON.stringify(result)}\n\n`); } catch (error) { res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : "Stream failed" })}\n\n`); }
+        finally { polling = false; }
       };
       await send();
       const timer = setInterval(() => void send(), 2000);
-      req.on("close", () => clearInterval(timer));
+      const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(": heartbeat\n\n"); }, 15000);
+      req.on("close", () => { clearInterval(timer); clearInterval(heartbeat); });
     } catch { res.status(401).end(); }
   });
   // tRPC API

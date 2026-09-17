@@ -5,7 +5,7 @@ export type ServerStatus = (typeof SERVER_STATUSES)[number];
 const ALLOWED_TRANSITIONS: Record<ServerStatus, readonly ServerStatus[]> = {
   installing: ["offline", "failed"],
   offline: ["installing", "running"],
-  running: ["stopping", "offline", "failed"],
+  running: ["stopping", "offline", "installing", "failed"],
   stopping: ["running", "offline", "failed"],
   failed: ["installing", "offline"],
 };
