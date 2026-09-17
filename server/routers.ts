@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
-import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
+import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, getStoredFile, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { addTeamMember, createAllocation, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerUser, deleteTeamMember, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, seedCatalog, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
@@ -188,16 +188,16 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeDownloadFile(input.name, input.path); }),
     members: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
-      .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); return listServerMembers(server.id); }),
+      .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "member.read"); return listServerMembers(server.id); }),
     schedules: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
-      .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); return listSchedules(server.id); }),
+      .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "schedule.read"); return listSchedules(server.id); }),
     createSchedule: protectedProcedure
       .input(z.object({ name: z.string().min(1).max(100), scheduleName: z.string().min(1).max(100), cron: z.string().regex(/^(\S+\s+){4}\S+$/), action: z.enum(["start", "stop", "restart", "command"]), payload: z.string().max(2000).optional() }))
-      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); return createSchedule({ serverId: server.id, name: input.scheduleName, cron: input.cron, action: input.action, payload: input.payload || null, enabled: 1 }); }),
+      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "schedule.update"); return createSchedule({ serverId: server.id, name: input.scheduleName, cron: input.cron, action: input.action, payload: input.payload || null, enabled: 1 }); }),
     toggleSchedule: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), scheduleId: z.number().int().positive(), enabled: z.boolean() }))
-      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); const rows = await listSchedules(server.id); if (!rows.some(row => row.id === input.scheduleId)) throw new TRPCError({ code: "NOT_FOUND", message: "Schedule not found" }); await updateScheduleEnabled(input.scheduleId, input.enabled ? 1 : 0); return { success: true }; }),
+      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "schedule.update"); const rows = await listSchedules(server.id); if (!rows.some(row => row.id === input.scheduleId)) throw new TRPCError({ code: "NOT_FOUND", message: "Schedule not found" }); await updateScheduleEnabled(input.scheduleId, input.enabled ? 1 : 0); return { success: true }; }),
     sftpCredentials: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeSftpCredentials(input.name); }),
@@ -208,7 +208,7 @@ export const appRouter = router({
   files: router({
     list: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100) }))
-      .query(({ ctx, input }) => listStoredFiles(ctx.user.id, input.serverName)),
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.read"); return listStoredFiles(ctx.user.id, input.serverName); }),
     upload: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255), mimeType: z.string().min(1).max(150), size: z.number().int().nonnegative().max(MAX_UPLOAD_BYTES), dataUrl: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
@@ -225,7 +225,7 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeExtractZip(input.serverName, safeFileName(input.fileName)); }),
     delete: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ ctx, input }) => deleteStoredFile(ctx.user.id, input.id)),
+      .mutation(async ({ ctx, input }) => { const file = await getStoredFile(input.id); if (!file || file.userId !== ctx.user.id) return { success: true } as const; await requireServerPermission(ctx, file.serverName, "file.write"); return deleteStoredFile(ctx.user.id, input.id); }),
   }),
 });
 

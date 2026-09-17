@@ -320,7 +320,9 @@ class SDKServer {
       throw ForbiddenError("Account disabled");
     }
 
-    if (typeof session.sessionVersion === "number" && session.sessionVersion !== user.sessionVersion) {
+    // Session versions are mandatory for database-backed users. Tokens issued
+    // before version enforcement must not remain usable after a revocation.
+    if (typeof session.sessionVersion !== "number" || session.sessionVersion !== user.sessionVersion) {
       throw ForbiddenError("Session expired; please sign in again");
     }
 

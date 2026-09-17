@@ -47,10 +47,16 @@ export function registerOAuthRoutes(app: Express) {
         loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
         lastSignedIn: new Date(),
       });
+      const user = await db.getUserByOpenId(userInfo.openId);
+      if (!user) {
+        res.status(500).json({ error: "OAuth user could not be provisioned" });
+        return;
+      }
 
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",
         expiresInMs: ONE_YEAR_MS,
+        sessionVersion: user.sessionVersion,
       });
 
       const cookieOptions = getSessionCookieOptions(req);

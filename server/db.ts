@@ -196,6 +196,13 @@ export async function listStoredFiles(userId: number, serverName: string) {
     .orderBy(desc(storedFiles.createdAt));
 }
 
+export async function getStoredFile(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(storedFiles).where(eq(storedFiles.id, id)).limit(1);
+  return rows[0];
+}
+
 export async function createStoredFile(file: InsertStoredFile) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
