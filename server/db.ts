@@ -160,6 +160,12 @@ export async function updateUserPassword(userId: number, passwordHash: string) {
   await db.update(users).set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, userId));
 }
 
+export async function updateUserTwoFactor(userId: number, input: { secret?: string | null; enabled?: number; recoveryCodesHash?: string | null }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(users).set({ totpSecretEncrypted: input.secret, totpEnabled: input.enabled, recoveryCodesHash: input.recoveryCodesHash, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, userId));
+}
+
 export async function listStoredFiles(userId: number, serverName: string) {
   const db = await getDb();
   if (!db) return [];
