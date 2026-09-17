@@ -5,7 +5,7 @@ import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
-import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerUsers, listServers, seedCatalog, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
+import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerUsers, listServers, seedCatalog, updateScheduleEnabled, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -115,6 +115,15 @@ export const appRouter = router({
     downloadFile: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), path: z.string().min(1).max(500) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeDownloadFile(input.name, input.path); }),
+    schedules: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48) }))
+      .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); return listSchedules(server.id); }),
+    createSchedule: protectedProcedure
+      .input(z.object({ name: z.string().min(1).max(100), scheduleName: z.string().min(1).max(100), cron: z.string().regex(/^(\S+\s+){4}\S+$/), action: z.enum(["start", "stop", "restart", "command"]), payload: z.string().max(2000).optional() }))
+      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); return createSchedule({ serverId: server.id, name: input.scheduleName, cron: input.cron, action: input.action, payload: input.payload || null, enabled: 1 }); }),
+    toggleSchedule: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48), scheduleId: z.number().int().positive(), enabled: z.boolean() }))
+      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "control"); const rows = await listSchedules(server.id); if (!rows.some(row => row.id === input.scheduleId)) throw new TRPCError({ code: "NOT_FOUND", message: "Schedule not found" }); await updateScheduleEnabled(input.scheduleId, input.enabled ? 1 : 0); return { success: true }; }),
     sftpCredentials: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeSftpCredentials(input.name); }),

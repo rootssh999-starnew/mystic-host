@@ -154,6 +154,11 @@ export async function markScheduleRun(id: number) {
   await db.update(schedules).set({ lastRunAt: new Date() }).where(eq(schedules.id, id));
 }
 
+export async function updateScheduleEnabled(id: number, enabled: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(schedules).set({ enabled }).where(eq(schedules.id, id));
+}
 export async function listBackups(serverId: number) {
   const db = await getDb();
   if (!db) return [];
