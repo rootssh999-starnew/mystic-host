@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
-import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, revokeApiKey, revokeInvitation } from "./db";
+import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { addTeamMember, createAllocation, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerUser, deleteTeamMember, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, seedCatalog, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
@@ -61,6 +61,8 @@ export const appRouter = router({
   }),
   admin: router({
     overview: adminProcedure.query(() => getAdminOverview()),
+    users: adminProcedure.query(() => listUsers()),
+    updateUser: adminProcedure.input(z.object({ userId: z.number().int().positive(), role: z.enum(["user", "admin"]).optional(), disabled: z.boolean().optional() })).mutation(({ input }) => updateUserAdmin(input.userId, { role: input.role, disabled: input.disabled === undefined ? undefined : (input.disabled ? 1 : 0) })),
     teams: adminProcedure.query(({ ctx }) => listTeams(ctx.user.id)),
     createTeam: adminProcedure.input(z.object({ name: z.string().min(1).max(100), description: z.string().max(500).default("") })).mutation(({ ctx, input }) => createTeam({ ownerId: ctx.user.id, name: input.name, description: input.description })),
     teamMembers: adminProcedure.input(z.object({ teamId: z.number().int().positive() })).query(({ input }) => listTeamMembers(input.teamId)),

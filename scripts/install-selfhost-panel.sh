@@ -52,6 +52,9 @@ fi
 if [[ -f /opt/mystic-host-panel/drizzle/0010_teams.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'teams'" | grep -q '^teams$'; then
   sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0010_teams.sql
 fi
+if [[ -f /opt/mystic-host-panel/drizzle/0011_user_disabled.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM users LIKE 'disabled'" | grep -q '^disabled'; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0011_user_disabled.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel

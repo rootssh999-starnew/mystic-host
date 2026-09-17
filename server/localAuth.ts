@@ -78,6 +78,7 @@ export function registerLocalAuthRoutes(app: Express) {
     const key = `${req.ip}:${email}`; if (!allowedLogin(key)) return res.status(429).json({ error: "Too many login attempts; try again later" });
     const user = await db.getUserByEmail(email);
     if (!user?.passwordHash || !verifyPassword(password, user.passwordHash)) return res.status(401).json({ error: "Invalid email or password" });
+    if (user.disabled) return res.status(403).json({ error: "Account disabled" });
     if (user.totpEnabled && user.totpSecretEncrypted) { const code = String(req.body?.code || ""); let valid = /^\d{6}$/.test(code) && validTotp(decryptSecret(user.totpSecretEncrypted), code); if (!valid && code) { try { const hashes = JSON.parse(user.recoveryCodesHash || "[]") as string[]; const hash = recoveryHash(code); const index = hashes.indexOf(hash); if (index >= 0) { hashes.splice(index, 1); await db.updateUserTwoFactor(user.id, { recoveryCodesHash: JSON.stringify(hashes) }); valid = true; } } catch {} } if (!valid) return res.status(401).json({ error: "Two-factor authentication code required" }); }
     await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
     const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || email, expiresInMs: ONE_YEAR_MS, sessionVersion: user.sessionVersion });

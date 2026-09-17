@@ -316,6 +316,10 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    if (user.disabled) {
+      throw ForbiddenError("Account disabled");
+    }
+
     if (typeof session.sessionVersion === "number" && session.sessionVersion !== user.sessionVersion) {
       throw ForbiddenError("Session expired; please sign in again");
     }

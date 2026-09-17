@@ -174,6 +174,20 @@ export async function invalidateUserSessions(userId: number) {
   return user[0]?.sessionVersion ?? 0;
 }
 
+export async function listUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: users.id, openId: users.openId, name: users.name, email: users.email, role: users.role, disabled: users.disabled, createdAt: users.createdAt, lastSignedIn: users.lastSignedIn }).from(users).orderBy(desc(users.id));
+}
+
+export async function updateUserAdmin(userId: number, input: { role?: "user" | "admin"; disabled?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(users).set({ role: input.role, disabled: input.disabled, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, userId));
+  const rows = await db.select({ id: users.id, openId: users.openId, name: users.name, email: users.email, role: users.role, disabled: users.disabled, createdAt: users.createdAt, lastSignedIn: users.lastSignedIn }).from(users).where(eq(users.id, userId)).limit(1);
+  return rows[0];
+}
+
 export async function listStoredFiles(userId: number, serverName: string) {
   const db = await getDb();
   if (!db) return [];

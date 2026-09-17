@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD COLUMN `disabled` int NOT NULL DEFAULT 0;
