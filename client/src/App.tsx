@@ -6,12 +6,14 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Admin from "./pages/Admin";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
+import Register from "./pages/Register";
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/admin" component={Admin} />
+      <Route path="/register" component={Register} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
