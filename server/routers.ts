@@ -5,7 +5,7 @@ import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
 import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
-import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, getNode, listAllocations, listDatabaseHosts, listEggs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, seedCatalog, updateScheduleEnabled, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
+import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createJob, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, seedCatalog, updateJob, updateScheduleEnabled, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -63,11 +63,15 @@ export const appRouter = router({
       .input(z.object({ ownerId: z.number().int().positive(), nodeId: z.number().int().positive(), allocationId: z.number().int().positive().optional(), eggId: z.number().int().positive().optional(), name: z.string().min(2).max(48), runtime: z.string().min(1), image: z.string().min(1), startup: z.string().min(1), memoryMb: z.number().int().min(128).max(65536), diskMb: z.number().int().min(128).max(1048576), cpu: z.number().min(0.1).max(64) }))
       .mutation(async ({ input }) => {
         const created = await createPersistentServer({ ...input, cpu: Math.round(input.cpu * 100) });
+        const job = await createJob({ serverId: created.id, type: "server.create", payload: { identifier: created.identifier, name: created.name, image: created.image } });
+        await updateJob(job.id, { status: "running" });
         try {
           await createManagedNodeServer({ name: created.identifier, runtime: created.runtime, image: created.image, startup: created.startup, memoryMb: created.memoryMb, cpu: created.cpu / 100 });
           await updateServerStatus(created.id, "offline");
+          await updateJob(job.id, { status: "completed", result: { serverId: created.id, identifier: created.identifier } });
         } catch (error) {
           await updateServerStatus(created.id, "failed");
+          await updateJob(job.id, { status: "failed", error: error instanceof Error ? error.message : "Server creation failed" });
           throw error;
         }
         return created;
@@ -78,6 +82,7 @@ export const appRouter = router({
     serverStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["installing", "offline", "running", "stopping", "failed"]) })).mutation(({ input }) => updateServerStatus(input.id, input.status)),
     nodeStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["offline", "online", "maintenance"]) })).mutation(({ input }) => updateNodeStatus(input.id, input.status)),
     schedules: adminProcedure.input(z.object({ serverId: z.number().int().positive() })).query(({ input }) => listSchedules(input.serverId)),
+    jobs: adminProcedure.input(z.object({ serverId: z.number().int().positive().optional() }).optional()).query(({ input }) => listJobs(input?.serverId)),
     createSchedule: adminProcedure.input(z.object({ serverId: z.number().int().positive(), name: z.string().min(1).max(100), cron: z.string().min(1).max(100), action: z.enum(["start", "stop", "restart", "command"]), payload: z.string().optional() })).mutation(({ input }) => createSchedule(input)),
     serverUsers: adminProcedure.input(z.object({ serverId: z.number().int().positive() })).query(({ input }) => listServerUsers(input.serverId)),
     createServerUser: adminProcedure.input(z.object({ serverId: z.number().int().positive(), userId: z.number().int().positive(), permissions: z.array(z.string().min(1)).min(1).max(50) })).mutation(({ input }) => createServerUser(input)),

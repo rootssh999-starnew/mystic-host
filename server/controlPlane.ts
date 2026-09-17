@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { getDb } from "./db";
-import { allocations, backups, databaseHosts, eggs, locations, nests, nodes, schedules, serverDatabases, serverUsers, servers, users } from "../drizzle/schema";
+import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, schedules, serverDatabases, serverUsers, servers, users } from "../drizzle/schema";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -126,6 +126,27 @@ export async function updateServerStatus(id: number, status: typeof servers.$inf
   const db = await getDb();
   if (!db) return;
   await db.update(servers).set({ status }).where(eq(servers.id, id));
+}
+
+export async function createJob(input: { serverId?: number; type: string; payload?: unknown }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(jobs).values({ serverId: input.serverId, type: input.type, status: "queued", payloadJson: JSON.stringify(input.payload ?? {}) });
+  const rows = await db.select().from(jobs).where(eq(jobs.id, Number(result[0].insertId))).limit(1);
+  return rows[0];
+}
+
+export async function listJobs(serverId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(jobs).where(serverId ? eq(jobs.serverId, serverId) : undefined).orderBy(desc(jobs.id));
+}
+
+export async function updateJob(id: number, input: { status: "queued" | "running" | "completed" | "failed" | "cancelled"; result?: unknown; error?: string | null }) {
+  const db = await getDb();
+  if (!db) return;
+  const now = new Date();
+  await db.update(jobs).set({ status: input.status, resultJson: input.result === undefined ? undefined : JSON.stringify(input.result), error: input.error ?? null, startedAt: input.status === "running" ? now : undefined, finishedAt: ["completed", "failed", "cancelled"].includes(input.status) ? now : undefined }).where(eq(jobs.id, id));
 }
 
 export async function listSchedules(serverId: number) {
