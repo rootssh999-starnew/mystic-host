@@ -115,8 +115,28 @@ export const appRouter = router({
         return created;
       }),
     createServer: adminProcedure
-      .input(z.object({ name: z.string().min(2).max(48), runtime: z.string().min(1), memoryMb: z.number().int().min(128).max(8192), cpu: z.number().min(0.1).max(4) }))
-      .mutation(({ input }) => createNodeServer(input)),
+      .input(z.object({ nodeId: z.number().int().positive(), allocationId: z.number().int().positive().optional(), name: z.string().min(2).max(48), runtime: z.enum(["nodejs", "python", "polyglot", "bun"]), memoryMb: z.number().int().min(128).max(8192), cpu: z.number().min(0.1).max(4) }))
+      .mutation(async ({ ctx, input }) => {
+        const image = { nodejs: "node:22-bookworm", python: "python:3.12-slim", polyglot: "python:3.12-slim", bun: "oven/bun:1" }[input.runtime];
+        const node = (await listNodes()).find((item) => item.id === input.nodeId);
+        if (!node) throw new TRPCError({ code: "NOT_FOUND", message: "Node not found" });
+        acquireServerOperation(input.nodeId, "server-create");
+        try {
+          const created = await createPersistentServer({ ownerId: ctx.user.id, nodeId: input.nodeId, allocationId: input.allocationId, name: input.name, runtime: input.runtime, image, startup: input.runtime === "nodejs" ? "node server.js" : input.runtime === "bun" ? "bun run start" : "python app.py", installScript: "", variablesJson: "{}", memoryMb: input.memoryMb, diskMb: 5120, cpu: Math.round(input.cpu * 100) });
+          const job = await createJob({ serverId: created.id, type: "server.create", payload: { identifier: created.identifier, name: created.name, image: created.image } });
+          await updateJob(job.id, { status: "running" });
+          try {
+            await createManagedNodeServer({ name: created.identifier, runtime: created.runtime, image: created.image, startup: created.startup, installScript: created.installScript, memoryMb: created.memoryMb, cpu: created.cpu / 100 });
+            await updateServerStatus(created.id, "offline");
+            await updateJob(job.id, { status: "completed", result: { serverId: created.id, identifier: created.identifier } });
+          } catch (error) {
+            await updateServerStatus(created.id, "failed");
+            await updateJob(job.id, { status: "failed", error: error instanceof Error ? error.message : "Server creation failed" });
+            throw error;
+          }
+          return created;
+        } finally { releaseServerOperation(input.nodeId); }
+      }),
     serverStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["installing", "offline", "running", "stopping", "failed"]) })).mutation(({ input }) => updateServerStatus(input.id, input.status)),
     nodeStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["offline", "online", "maintenance"]) })).mutation(({ input }) => updateNodeStatus(input.id, input.status)),
     schedules: adminProcedure.input(z.object({ serverId: z.number().int().positive() })).query(({ input }) => listSchedules(input.serverId)),
