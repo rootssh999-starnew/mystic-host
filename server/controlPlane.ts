@@ -210,6 +210,11 @@ export async function getNodeCapacity(nodeId: number) {
   return { nodeId, status: node.status, servers: reservations.length, ...capacity };
 }
 
+export async function listNodeCapacities() {
+  const rows = await listNodes();
+  return Promise.all(rows.map((node) => getNodeCapacity(node.id)));
+}
+
 export async function updatePersistentServer(id: number, input: Partial<Pick<typeof servers.$inferInsert, "name" | "startup" | "image" | "memoryMb" | "diskMb" | "cpu">>) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
