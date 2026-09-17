@@ -1,5 +1,6 @@
-import { createScheduleRun, finishScheduleRun, listEnabledSchedules, markScheduleRun } from "./controlPlane";
-import { nodeAction, nodeCommand } from "./nodeAgent";
+import { acquireServerOperation, createScheduleRun, deleteBackupRecord, finishScheduleRun, listBackups, listEnabledSchedules, listServers, markScheduleRun, releaseServerOperation } from "./controlPlane";
+import { nodeAction, nodeCommand, nodeDeleteBackup } from "./nodeAgent";
+import { selectBackupsForCleanup } from "@shared/backupRetention";
 
 function matchesField(field: string, value: number) {
   if (field === "*") return true;
@@ -22,13 +23,32 @@ function matchesCron(expression: string, now: Date, timezone: string) {
 }
 
 let running = false;
+let lastCleanupDay = "";
+
+async function cleanupBackups(now: Date) {
+  const day = now.toISOString().slice(0, 10);
+  if (lastCleanupDay === day) return;
+  lastCleanupDay = day;
+  for (const server of await listServers()) {
+    const candidates = selectBackupsForCleanup(await listBackups(server.id), now);
+    for (const backup of candidates) {
+      try {
+        acquireServerOperation(server.id, "backup-retention");
+        try { await nodeDeleteBackup(server.identifier, backup.name); await deleteBackupRecord(backup.id); }
+        finally { releaseServerOperation(server.id); }
+      } catch (error) { console.error(`[Scheduler] Backup cleanup ${backup.id} failed`, error); }
+    }
+  }
+}
+
 export function startScheduler() {
   if (running) return;
   running = true;
   const tick = async () => {
-    const now = new Date();
-    try {
-      const rows = await listEnabledSchedules();
+      const now = new Date();
+      try {
+        await cleanupBackups(now);
+        const rows = await listEnabledSchedules();
       for (const { schedule, server } of rows) {
         const previous = schedule.lastRunAt?.getTime() ?? 0;
         const sameMinute = Math.floor(previous / 60000) === Math.floor(now.getTime() / 60000);

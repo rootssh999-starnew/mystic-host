@@ -338,6 +338,12 @@ export async function updateBackupRecord(id: number, input: { name?: string; arc
   return rows[0];
 }
 
+export async function deleteBackupRecord(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.delete(backups).where(eq(backups.id, id));
+}
+
 export async function listServerMembers(serverId: number) {
   const db = await getDb();
   if (!db) return [];
