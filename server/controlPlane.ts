@@ -5,6 +5,7 @@ import { normalizePermissions } from "@shared/permissions";
 import { allocations, backups, databaseHosts, eggs, jobs, locations, nests, nodes, scheduleRuns, schedules, serverDatabases, serverUsers, servers, teamMembers, teams, users } from "../drizzle/schema";
 import { assertServerStatusTransition, type ServerStatus } from "@shared/serverLifecycle";
 import { assertCapacityAvailable } from "@shared/nodeCapacity";
+import { assertDatabaseName, assertDatabasePassword } from "@shared/databasePolicy";
 
 const identifier = () => randomBytes(12).toString("hex");
 const token = () => randomBytes(32).toString("hex");
@@ -399,7 +400,14 @@ export async function listDatabaseHosts() {
 export async function createDatabaseHost(input: typeof databaseHosts.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  const result = await db.insert(databaseHosts).values(input);
+  const nodeRows = await db.select({ id: nodes.id }).from(nodes).where(eq(nodes.id, input.nodeId)).limit(1);
+  if (!nodeRows[0]) throw new Error("Node not found");
+  const duplicate = await db.select({ id: databaseHosts.id }).from(databaseHosts).where(and(eq(databaseHosts.nodeId, input.nodeId), eq(databaseHosts.name, input.name))).limit(1);
+  if (duplicate[0]) throw new Error("Database host name already exists on this node");
+  const portInUse = await db.select({ id: databaseHosts.id }).from(databaseHosts).where(and(eq(databaseHosts.nodeId, input.nodeId), eq(databaseHosts.port, input.port))).limit(1);
+  if (portInUse[0]) throw new Error("Database host port is already in use on this node");
+  assertDatabasePassword(input.password);
+  const result = await db.insert(databaseHosts).values({ ...input, name: input.name.trim(), hostname: input.hostname.trim(), username: input.username.trim() });
   const rows = await db.select().from(databaseHosts).where(eq(databaseHosts.id, Number(result[0].insertId))).limit(1);
   return rows[0];
 }
@@ -413,7 +421,18 @@ export async function listServerDatabases(serverId: number) {
 export async function createServerDatabase(input: typeof serverDatabases.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  const result = await db.insert(serverDatabases).values(input);
+  const serverRows = await db.select({ nodeId: servers.nodeId }).from(servers).where(eq(servers.id, input.serverId)).limit(1);
+  const server = serverRows[0];
+  if (!server) throw new Error("Server not found");
+  const hostRows = await db.select().from(databaseHosts).where(eq(databaseHosts.id, input.hostId)).limit(1);
+  const host = hostRows[0];
+  if (!host) throw new Error("Database host not found");
+  if (host.nodeId !== server.nodeId) throw new Error("Database host must belong to the server node");
+  const duplicate = await db.select({ id: serverDatabases.id }).from(serverDatabases).where(and(eq(serverDatabases.serverId, input.serverId), eq(serverDatabases.name, input.name))).limit(1);
+  if (duplicate[0]) throw new Error("Database name already exists on this server");
+  assertDatabaseName(input.name);
+  assertDatabasePassword(input.password);
+  const result = await db.insert(serverDatabases).values({ ...input, name: input.name.trim(), username: input.username.trim() });
   const rows = await db.select().from(serverDatabases).where(eq(serverDatabases.id, Number(result[0].insertId))).limit(1);
   return rows[0];
 }
