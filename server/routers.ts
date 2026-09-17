@@ -102,6 +102,11 @@ export const appRouter = router({
         return { success: true, status: input.action === "stop" ? "offline" : "running" } as const;
       } finally { releaseServerOperation(server.id); }
     }),
+    reinstallPreview: adminProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
+      const server = (await listServers()).find((item) => item.id === input.id);
+      if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
+      return { serverId: server.id, name: server.name, identifier: server.identifier, currentStatus: server.status, runtime: server.runtime, image: server.image, startup: server.startup, memoryMb: server.memoryMb, cpu: server.cpu, preservedVolume: `/opt/mystic-host/servers/${server.identifier}:/workspace`, preservedData: ["uploaded files", "server databases", "workspace contents"], changedOnReinstall: ["Docker container", "runtime image", "startup process"], confirmationToken: "REINSTALL_PRESERVE_VOLUME" };
+    }),
     createPersistentServer: adminProcedure
       .input(z.object({ ownerId: z.number().int().positive(), nodeId: z.number().int().positive(), allocationId: z.number().int().positive().optional(), eggId: z.number().int().positive().optional(), name: z.string().min(2).max(48), runtime: z.string().min(1), image: z.string().min(1), startup: z.string().min(1), installScript: z.string().max(100000).optional(), variablesJson: z.string().max(20000).optional(), memoryMb: z.number().int().min(128).max(65536), diskMb: z.number().int().min(128).max(1048576), cpu: z.number().min(0.1).max(64) }))
       .mutation(async ({ input }) => {
