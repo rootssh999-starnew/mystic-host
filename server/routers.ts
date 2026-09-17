@@ -203,10 +203,11 @@ export const appRouter = router({
   }),
   node: router({
     updateSettings: protectedProcedure
-      .input(z.object({ name: z.string().min(2).max(48), serverName: z.string().min(2).max(100).optional(), startup: z.string().min(1).max(500).optional() }))
+      .input(z.object({ name: z.string().min(2).max(48), serverName: z.string().min(2).max(100).optional(), startup: z.string().min(1).max(500).optional(), variablesJson: z.string().max(20000).optional() }))
       .mutation(async ({ ctx, input }) => {
         const server = await requireServerPermission(ctx, input.name, "settings.update");
-        const updated = await updatePersistentServer(server.id, { name: input.serverName, startup: input.startup });
+        if (input.variablesJson !== undefined) { parseEggVariables(input.variablesJson); }
+        const updated = await updatePersistentServer(server.id, { name: input.serverName, startup: input.startup, variablesJson: input.variablesJson });
         return { success: true, server: updated };
       }),
     action: protectedProcedure
