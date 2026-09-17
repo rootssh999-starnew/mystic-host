@@ -34,6 +34,9 @@ fi
 if [[ -f /opt/mystic-host-panel/drizzle/0004_job_progress.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM jobs LIKE 'progress'" | grep -q '^progress'; then
   sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0004_job_progress.sql
 fi
+if [[ -f /opt/mystic-host-panel/drizzle/0005_api_keys.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'api_keys'" | grep -q '^api_keys$'; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0005_api_keys.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel

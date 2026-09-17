@@ -10,6 +10,7 @@ import { startScheduler } from "../scheduler";
 import { nodeLogs } from "../nodeAgent";
 import { sdk } from "./sdk";
 import { registerLocalAuthRoutes } from "../localAuth";
+import { registerApiRoutes } from "../api";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -42,6 +43,7 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerLocalAuthRoutes(app);
+  registerApiRoutes(app);
   app.get("/api/servers/:name/events", async (req, res) => {
     try {
       const user = await sdk.authenticateRequest(req);

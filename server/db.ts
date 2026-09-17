@@ -1,6 +1,7 @@
-import { and, count, desc, eq, sum } from "drizzle-orm";
+import { and, count, desc, eq, isNull, sum } from "drizzle-orm";
+import { createHash, randomBytes } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertStoredFile, InsertUser, storedFiles, users } from "../drizzle/schema";
+import { apiKeys, InsertStoredFile, InsertUser, storedFiles, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -60,6 +61,41 @@ export async function getUserByEmail(email: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return result[0];
+}
+
+export async function createApiKey(userId: number, name: string, scopes: string[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const token = `mh_${randomBytes(32).toString("base64url")}`;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const result = await db.insert(apiKeys).values({ userId, name, tokenHash, scopesJson: JSON.stringify(Array.from(new Set(scopes))) });
+  const rows = await db.select().from(apiKeys).where(eq(apiKeys.id, Number(result[0].insertId))).limit(1);
+  return { key: rows[0], token };
+}
+
+export async function authenticateApiToken(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const rows = await db.select({ key: apiKeys, user: users }).from(apiKeys).innerJoin(users, eq(apiKeys.userId, users.id)).where(and(eq(apiKeys.tokenHash, tokenHash), isNull(apiKeys.revokedAt))).limit(1);
+  if (!rows[0]) return undefined;
+  await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, rows[0].key.id));
+  let scopes: string[] = [];
+  try { scopes = JSON.parse(rows[0].key.scopesJson) as string[]; } catch {}
+  return { user: rows[0].user, scopes };
+}
+
+export async function listApiKeys(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: apiKeys.id, name: apiKeys.name, scopesJson: apiKeys.scopesJson, lastUsedAt: apiKeys.lastUsedAt, createdAt: apiKeys.createdAt, revokedAt: apiKeys.revokedAt }).from(apiKeys).where(eq(apiKeys.userId, userId)).orderBy(desc(apiKeys.id));
+}
+
+export async function revokeApiKey(userId: number, id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(apiKeys).set({ revokedAt: new Date() }).where(and(eq(apiKeys.id, id), eq(apiKeys.userId, userId)));
+  return { success: true } as const;
 }
 
 export async function listStoredFiles(userId: number, serverName: string) {
