@@ -91,6 +91,7 @@ export const appRouter = router({
     exportEgg: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => { const row = (await listEggs()).find((egg) => egg.id === input.id); if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Egg not found" }); return { version: 1, egg: row }; }),
     importEgg: adminProcedure.input(z.object({ nestId: z.number().int().positive(), egg: z.object({ name: z.string().min(1).max(100), slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,99}$/), image: z.string().min(1).max(255), startup: z.string().min(1).max(500), installScript: z.string().max(100000), environmentJson: z.string().max(20000) }) })).mutation(({ input }) => createEgg({ ...input.egg, nestId: input.nestId })),
     servers: adminProcedure.query(() => listServers()),
+    backups: adminProcedure.query(async () => { const servers = await listServers(); const rows = await Promise.all(servers.map(async (server) => (await listBackups(server.id)).map((backup) => ({ ...backup, serverId: server.id, serverName: server.name, identifier: server.identifier })))); return rows.flat(); }),
     serverAction: adminProcedure.input(z.object({ id: z.number().int().positive(), action: z.enum(["start", "stop", "restart"]) })).mutation(async ({ input }) => {
       const server = (await listServers()).find((item) => item.id === input.id);
       if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
