@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
 import { apiKeys, InsertStoredFile, InsertUser, invitations, passwordResets, storedFiles, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { normalizeApiScopes } from "@shared/apiScopes";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -68,7 +69,7 @@ export async function createApiKey(userId: number, name: string, scopes: string[
   if (!db) throw new Error("Database is not available");
   const token = `mh_${randomBytes(32).toString("base64url")}`;
   const tokenHash = createHash("sha256").update(token).digest("hex");
-  const result = await db.insert(apiKeys).values({ userId, name, tokenHash, scopesJson: JSON.stringify(Array.from(new Set(scopes))) });
+  const result = await db.insert(apiKeys).values({ userId, name, tokenHash, scopesJson: JSON.stringify(normalizeApiScopes(scopes)) });
   const rows = await db.select().from(apiKeys).where(eq(apiKeys.id, Number(result[0].insertId))).limit(1);
   return { key: rows[0], token };
 }
@@ -78,7 +79,7 @@ export async function authenticateApiToken(token: string) {
   if (!db) return undefined;
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const rows = await db.select({ key: apiKeys, user: users }).from(apiKeys).innerJoin(users, eq(apiKeys.userId, users.id)).where(and(eq(apiKeys.tokenHash, tokenHash), isNull(apiKeys.revokedAt))).limit(1);
-  if (!rows[0]) return undefined;
+  if (!rows[0] || rows[0].user.disabled) return undefined;
   await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, rows[0].key.id));
   let scopes: string[] = [];
   try { scopes = JSON.parse(rows[0].key.scopesJson) as string[]; } catch {}
