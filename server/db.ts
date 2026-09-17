@@ -1,7 +1,7 @@
-import { and, count, desc, eq, isNull, sum } from "drizzle-orm";
+import { and, count, desc, eq, isNull, sql, sum } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
-import { apiKeys, InsertStoredFile, InsertUser, invitations, storedFiles, users } from "../drizzle/schema";
+import { apiKeys, InsertStoredFile, InsertUser, invitations, passwordResets, storedFiles, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -130,6 +130,34 @@ export async function consumeInvitation(token: string) {
   if (!invitation || invitation.expiresAt.getTime() <= Date.now()) return undefined;
   await db.update(invitations).set({ acceptedAt: new Date() }).where(eq(invitations.id, invitation.id));
   return invitation;
+}
+
+export async function createPasswordReset(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const user = await getUserByEmail(email.toLowerCase());
+  if (!user) return undefined;
+  const token = `reset_${randomBytes(32).toString("base64url")}`;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  await db.insert(passwordResets).values({ userId: user.id, tokenHash, expiresAt: new Date(Date.now() + 30 * 60 * 1000) });
+  return token;
+}
+
+export async function consumePasswordReset(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const rows = await db.select({ reset: passwordResets, user: users }).from(passwordResets).innerJoin(users, eq(passwordResets.userId, users.id)).where(and(eq(passwordResets.tokenHash, tokenHash), isNull(passwordResets.usedAt))).limit(1);
+  const row = rows[0];
+  if (!row || row.reset.expiresAt.getTime() <= Date.now()) return undefined;
+  await db.update(passwordResets).set({ usedAt: new Date() }).where(eq(passwordResets.id, row.reset.id));
+  return row.user;
+}
+
+export async function updateUserPassword(userId: number, passwordHash: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(users).set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, userId));
 }
 
 export async function listStoredFiles(userId: number, serverName: string) {

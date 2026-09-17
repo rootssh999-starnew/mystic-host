@@ -43,6 +43,9 @@ fi
 if [[ -f /opt/mystic-host-panel/drizzle/0007_invitations.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'invitations'" | grep -q '^invitations$'; then
   sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0007_invitations.sql
 fi
+if [[ -f /opt/mystic-host-panel/drizzle/0008_password_resets.sql ]] && ! sudo mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'password_resets'" | grep -q '^password_resets$'; then
+  sudo mysql mystic_host < /opt/mystic-host-panel/drizzle/0008_password_resets.sql
+fi
 cd /opt/mystic-host-panel
 sudo npm install --legacy-peer-deps --ignore-scripts --no-audit --no-fund
 sudo chown -R ubuntu:ubuntu /opt/mystic-host-panel
