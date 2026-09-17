@@ -2,9 +2,9 @@ import type { Express, Request, Response } from "express";
 import { authenticateApiToken, getDb } from "./db";
 import { servers } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
-import { nodeAction, nodeCreateFolder, nodeDeleteFile, nodeDownloadFile, nodeListFiles, nodeLogs, nodeStats, nodeUploadFile } from "./nodeAgent";
+import { nodeAction, nodeCompleteUpload, nodeCreateArchive, nodeCreateFolder, nodeDeleteFile, nodeDownloadFile, nodeInitUpload, nodeListFiles, nodeLogs, nodeStats, nodeUploadChunk, nodeUploadFile } from "./nodeAgent";
 import { createManagedNodeServer, deleteNodeServer } from "./nodeAgent";
-import { createPersistentServer, deletePersistentServer, updatePersistentServer } from "./controlPlane";
+import { createJob, createPersistentServer, deletePersistentServer, updateJob, updatePersistentServer } from "./controlPlane";
 
 const requestBuckets = new Map<string, { started: number; count: number }>();
 
@@ -156,7 +156,15 @@ export function registerApiRoutes(app: Express) {
     if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
     const filePath = typeof req.body?.path === "string" ? req.body.path : "";
     if (!filePath) return error(res, 422, "Validation Error", "path is required.");
-    try { const result = req.body?.action === "create-folder" ? await nodeCreateFolder(server.identifier, filePath) : await nodeUploadFile(server.identifier, filePath, Buffer.from(String(req.body?.dataBase64 || ""), "base64")); return res.status(201).json(result); }
+    try {
+      let result;
+      if (req.body?.action === "create-folder") result = await nodeCreateFolder(server.identifier, filePath);
+      else if (req.body?.action === "init-upload") result = await nodeInitUpload(server.identifier, filePath);
+      else if (req.body?.action === "upload-chunk") result = await nodeUploadChunk(server.identifier, String(req.body.uploadId || ""), Number(req.body.index), Buffer.from(String(req.body.dataBase64 || ""), "base64"));
+      else if (req.body?.action === "complete-upload") result = await nodeCompleteUpload(server.identifier, String(req.body.uploadId || ""), filePath);
+      else result = await nodeUploadFile(server.identifier, filePath, Buffer.from(String(req.body?.dataBase64 || ""), "base64"));
+      return res.status(201).json(result);
+    }
     catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "File write failed."); }
   });
 
@@ -171,6 +179,22 @@ export function registerApiRoutes(app: Express) {
     const filePath = typeof req.body?.path === "string" ? req.body.path : typeof req.query.path === "string" ? req.query.path : "";
     if (!filePath) return error(res, 422, "Validation Error", "path is required.");
     try { return res.json(await nodeDeleteFile(server.identifier, filePath)); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "File deletion failed."); }
+  });
+
+  app.post(["/api/client/servers/:identifier/archive", "/api/client/v1/servers/:identifier/archive", "/api/application/servers/:identifier/archive", "/api/application/v1/servers/:identifier/archive"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth;
+    if (!auth || !hasScope(auth.scopes, "archives.write")) return error(res, 403, "Forbidden", "The API token lacks the archives.write scope.");
+    const db = await getDb();
+    if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1);
+    const server = rows[0];
+    if (!server || (!req.path.startsWith("/api/application") && server.ownerId !== auth.user.id)) return error(res, 404, "Not Found", "Server not found.");
+    const source = typeof req.body?.path === "string" ? req.body.path : "";
+    if (!source) return error(res, 422, "Validation Error", "path is required.");
+    const job = await createJob({ serverId: server.id, type: "file.archive", payload: { path: source } });
+    await updateJob(job.id, { status: "running", progress: 10, message: "Creating archive" });
+    try { const result = await nodeCreateArchive(server.identifier, source, typeof req.body?.output === "string" ? req.body.output : undefined); await updateJob(job.id, { status: "completed", progress: 100, message: "Archive created", result }); return res.status(202).json({ job: job.id, ...result }); }
+    catch (e) { await updateJob(job.id, { status: "failed", progress: 100, message: "Archive failed", error: e instanceof Error ? e.message : "Archive failed" }); return error(res, 502, "Node Error", e instanceof Error ? e.message : "Archive failed"); }
   });
 
   app.get(["/api/client/servers/:identifier/resources", "/api/client/v1/servers/:identifier/resources", "/api/application/servers/:identifier/resources", "/api/application/v1/servers/:identifier/resources"], async (req: ApiRequest, res) => {

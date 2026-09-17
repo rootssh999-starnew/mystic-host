@@ -248,6 +248,36 @@ async function handle(req, res) {
     return send(res, 200, { path: relative, bytes: details.size, dataBase64: data.toString("base64") });
   }
   if (req.method === "POST" && parts[3] === "files") {
+    if (input.action === "init-upload") {
+      const relative = safeRelativePath(input.path);
+      const uploadId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      await mkdir(path.join(serverRoot, ".uploads", uploadId), { recursive: true });
+      return send(res, 201, { uploadId, path: relative, chunkSize: 5 * 1024 * 1024 });
+    }
+    if (input.action === "upload-chunk") {
+      const uploadId = String(input.uploadId || "");
+      const index = Number(input.index);
+      if (!/^[0-9]{10,30}-[a-z0-9]{4,12}$/.test(uploadId) || !Number.isInteger(index) || index < 0 || index > 10000) throw new Error("Invalid upload chunk");
+      const data = Buffer.from(String(input.dataBase64 || ""), "base64");
+      if (!data.length || data.byteLength > 5 * 1024 * 1024) throw new Error("Chunk must be between 1 byte and 5 MB");
+      await writeFile(path.join(serverRoot, ".uploads", uploadId, `${index}.part`), data);
+      return send(res, 201, { uploadId, index, bytes: data.byteLength });
+    }
+    if (input.action === "complete-upload") {
+      const uploadId = String(input.uploadId || "");
+      const relative = safeRelativePath(input.path);
+      if (!/^[0-9]{10,30}-[a-z0-9]{4,12}$/.test(uploadId)) throw new Error("Invalid upload session");
+      const chunkDir = path.join(serverRoot, ".uploads", uploadId);
+      const entries = await readdir(chunkDir);
+      const chunks = entries.filter((entry) => /^\d+\.part$/.test(entry)).sort((a, b) => Number.parseInt(a) - Number.parseInt(b));
+      if (!chunks.length) throw new Error("No upload chunks found");
+      const data = Buffer.concat(await Promise.all(chunks.map((chunk) => readFile(path.join(chunkDir, chunk)))));
+      if (data.byteLength > 2 * 1024 * 1024 * 1024) throw new Error("Upload exceeds 2 GB");
+      await mkdir(path.dirname(path.join(serverRoot, relative)), { recursive: true });
+      await writeFile(path.join(serverRoot, relative), data);
+      await rm(chunkDir, { recursive: true, force: true });
+      return send(res, 201, { success: true, path: relative, size: data.byteLength, chunks: chunks.length });
+    }
     if (input.action === "create-folder") {
       const relative = safeRelativePath(input.path);
       await mkdir(path.join(serverRoot, relative), { recursive: false });
@@ -272,6 +302,14 @@ async function handle(req, res) {
     if (!archive.startsWith(serverRoot + path.sep) || !archive.toLowerCase().endsWith(".zip")) throw new Error("Only zip archives inside the server volume can be extracted");
     await exec("unzip", ["-o", archive, "-d", serverRoot]);
     return send(res, 200, { success: true });
+  }
+  if (req.method === "POST" && parts[3] === "archive") {
+    const source = safeRelativePath(input.path);
+    const output = safeRelativePath(input.output || `${source.replace(/[^a-zA-Z0-9_-]/g, "-")}.tar.gz`);
+    if (!output.endsWith(".tar.gz")) throw new Error("Archive output must end with .tar.gz");
+    await exec("tar", ["-czf", path.join(serverRoot, output), "-C", serverRoot, source]);
+    const details = await stat(path.join(serverRoot, output));
+    return send(res, 201, { success: true, path: output, bytes: details.size });
   }
   if (req.method === "DELETE" && parts.length === 3) {
     await docker(["rm", "-f", container]).catch(() => {});

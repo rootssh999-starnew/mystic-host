@@ -78,6 +78,9 @@ export function nodeUploadFile(name: string, filePath: string, data: Buffer) {
 export function nodeCreateFolder(name: string, folderPath: string) {
   return request<{ success: boolean; path: string; directory: boolean }>(`/v1/servers/${encodeURIComponent(name)}/files`, { method: "POST", body: JSON.stringify({ action: "create-folder", path: folderPath }) });
 }
+export function nodeInitUpload(name: string, filePath: string) { return request<{ uploadId: string; path: string; chunkSize: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, { method: "POST", body: JSON.stringify({ action: "init-upload", path: filePath }) }); }
+export function nodeUploadChunk(name: string, uploadId: string, index: number, data: Buffer) { return request<{ uploadId: string; index: number; bytes: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, { method: "POST", body: JSON.stringify({ action: "upload-chunk", uploadId, index, dataBase64: data.toString("base64") }) }); }
+export function nodeCompleteUpload(name: string, uploadId: string, filePath: string) { return request<{ success: boolean; path: string; size: number; chunks: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, { method: "POST", body: JSON.stringify({ action: "complete-upload", uploadId, path: filePath }) }); }
 export function nodeDeleteFile(name: string, filePath: string) {
   return request<{ success: boolean; path: string }>(`/v1/servers/${encodeURIComponent(name)}/files/${filePath.split("/").map(encodeURIComponent).join("/")}`, { method: "DELETE" });
 }
@@ -87,6 +90,7 @@ export function nodeExtractZip(name: string, archive: string) {
     body: JSON.stringify({ archive }),
   });
 }
+export function nodeCreateArchive(name: string, source: string, output?: string) { return request<{ success: boolean; path: string; bytes: number }>(`/v1/servers/${encodeURIComponent(name)}/archive`, { method: "POST", body: JSON.stringify({ path: source, output }) }); }
 export function deleteNodeServer(name: string) {
   return request<{ success: boolean }>(`/v1/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
 }
