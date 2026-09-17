@@ -301,6 +301,21 @@ export async function createServerUser(input: { serverId: number; userId: number
   return rows[0];
 }
 
+export async function updateServerUser(id: number, permissions: string[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(serverUsers).set({ permissionsJson: JSON.stringify(Array.from(new Set(permissions))) }).where(eq(serverUsers.id, id));
+  const rows = await db.select().from(serverUsers).where(eq(serverUsers.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deleteServerUser(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.delete(serverUsers).where(eq(serverUsers.id, id));
+  return { success: true } as const;
+}
+
 export async function listDatabaseHosts() {
   const db = await getDb();
   if (!db) return [];

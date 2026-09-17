@@ -1,10 +1,10 @@
 import type { Express, Request, Response } from "express";
 import { authenticateApiToken, getDb } from "./db";
-import { serverDatabases, servers } from "../drizzle/schema";
+import { serverDatabases, serverUsers, servers } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
 import { nodeAction, nodeBackups, nodeCompleteUpload, nodeCreateArchive, nodeCreateBackup, nodeCreateDatabase, nodeCreateFolder, nodeDeleteBackup, nodeDeleteDatabase, nodeDeleteFile, nodeDownloadFile, nodeInitUpload, nodeListFiles, nodeLogs, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadChunk, nodeUploadFile } from "./nodeAgent";
 import { createManagedNodeServer, deleteNodeServer } from "./nodeAgent";
-import { createJob, createPersistentServer, createServerDatabase, deletePersistentServer, deleteServerDatabase, updateJob, updatePersistentServer, updateServerDatabase } from "./controlPlane";
+import { createJob, createPersistentServer, createServerDatabase, deletePersistentServer, deleteServerDatabase, deleteServerUser, listServerMembers, updateJob, updatePersistentServer, updateServerDatabase, updateServerUser } from "./controlPlane";
 
 const requestBuckets = new Map<string, { started: number; count: number }>();
 
@@ -273,6 +273,27 @@ export function registerApiRoutes(app: Express) {
     const records = await db.select().from(serverDatabases).where(eq(serverDatabases.serverId, server.id)); const record = records.find((item) => item.name === req.params.database); if (!record) return error(res, 404, "Not Found", "Database not found.");
     const oldPassword = String(req.body?.old_password || ""); const newPassword = String(req.body?.new_password || ""); if (!oldPassword || newPassword.length < 12) return error(res, 422, "Validation Error", "Valid old_password and new_password are required.");
     try { const result = await nodeRotateDatabasePassword(server.identifier, record.name, record.username, oldPassword, newPassword); await updateServerDatabase(record.id, { password: newPassword }); return res.json(result); } catch (e) { return error(res, 502, "Node Error", e instanceof Error ? e.message : "Password rotation failed."); }
+  });
+
+  app.get(["/api/application/servers/:identifier/members", "/api/application/v1/servers/:identifier/members"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth; if (!auth || !hasScope(auth.scopes, "members.read")) return error(res, 403, "Forbidden", "The API token lacks the members.read scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const rows = await db.select().from(servers).where(eq(servers.identifier, req.params.identifier)).limit(1); if (!rows[0]) return error(res, 404, "Not Found", "Server not found.");
+    const members = await listServerMembers(rows[0].id); return res.json({ object: "list", data: members.map((member) => ({ object: "member", attributes: member })) });
+  });
+
+  app.patch(["/api/application/servers/:identifier/members/:memberId", "/api/application/v1/servers/:identifier/members/:memberId"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth; if (!auth || !hasScope(auth.scopes, "members.update")) return error(res, 403, "Forbidden", "The API token lacks the members.update scope.");
+    const db = await getDb(); if (!db) return error(res, 503, "Unavailable", "The database is unavailable.");
+    const memberId = Number(req.params.memberId); const rows = await db.select().from(serverUsers).where(eq(serverUsers.id, memberId)).limit(1); if (!rows[0]) return error(res, 404, "Not Found", "Member not found.");
+    const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions.filter((value: unknown): value is string => typeof value === "string").slice(0, 50) : []; if (!permissions.length) return error(res, 422, "Validation Error", "permissions must contain at least one value.");
+    return res.json({ object: "member", attributes: await updateServerUser(memberId, permissions) });
+  });
+
+  app.delete(["/api/application/servers/:identifier/members/:memberId", "/api/application/v1/servers/:identifier/members/:memberId"], async (req: ApiRequest, res) => {
+    const auth = req.apiAuth; if (!auth || !hasScope(auth.scopes, "members.delete")) return error(res, 403, "Forbidden", "The API token lacks the members.delete scope.");
+    const memberId = Number(req.params.memberId); if (!Number.isInteger(memberId) || memberId < 1) return error(res, 422, "Validation Error", "Invalid member id.");
+    return res.json(await deleteServerUser(memberId));
   });
 
   app.get(["/api/client/servers/:identifier/resources", "/api/client/v1/servers/:identifier/resources", "/api/application/servers/:identifier/resources", "/api/application/v1/servers/:identifier/resources"], async (req: ApiRequest, res) => {
