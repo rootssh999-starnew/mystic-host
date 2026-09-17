@@ -125,21 +125,33 @@ export async function deleteEgg(id: number) {
 export async function seedCatalog() {
   const db = await getDb();
   if (!db) return;
-  const existing = await db.select().from(nests).limit(1);
-  if (existing.length) return;
-  const nestRows = await db.insert(nests).values([
-    { name: "Minecraft", description: "Minecraft server templates." },
-    { name: "Source Engine", description: "Source engine dedicated server templates." },
-    { name: "Voice Servers", description: "Voice server templates." },
-    { name: "Rust", description: "Rust dedicated server template." },
-  ]);
-  const created = await db.select().from(nests).orderBy(nests.id);
+  const nestSeeds = [
+    { name: "Minecraft", description: "Minecraft Java and Bedrock dedicated server templates." },
+    { name: "Source Engine", description: "Source and Source 2 dedicated server templates." },
+    { name: "Voice Servers", description: "TeamSpeak, Mumble, and voice server templates." },
+    { name: "Rust", description: "Rust dedicated server templates." },
+    { name: "Terraria", description: "Terraria and tModLoader server templates." },
+    { name: "Steam Games", description: "Generic SteamCMD dedicated server templates." },
+  ];
+  const existingNests = await db.select().from(nests);
+  const existingNestNames = new Set(existingNests.map((row) => row.name));
+  const missingNests = nestSeeds.filter((nest) => !existingNestNames.has(nest.name));
+  if (missingNests.length) await db.insert(nests).values(missingNests);
+  const created = await db.select().from(nests);
   const byName = new Map(created.map((row) => [row.name, row.id]));
-  await db.insert(eggs).values([
-    { nestId: byName.get("Minecraft")!, name: "Vanilla Minecraft", slug: "minecraft-vanilla", image: "itzg/minecraft-server:java21", startup: "java -Xms{{SERVER_MEMORY}}M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui", installScript: "", environmentJson: JSON.stringify({ EULA: "TRUE", TYPE: "VANILLA" }) },
-    { nestId: byName.get("Source Engine")!, name: "Generic Source", slug: "source-generic", image: "cm2network/steamcmd:latest", startup: "./srcds_run -game {{GAME}} +map {{MAP}}", installScript: "", environmentJson: JSON.stringify({ GAME: "cstrike", MAP: "de_dust2" }) },
-    { nestId: byName.get("Rust")!, name: "Rust", slug: "rust", image: "didstopia/rust-server:latest", startup: "./RustDedicated -batchmode +server.port {{SERVER_PORT}}", installScript: "", environmentJson: JSON.stringify({ WORLD: "Procedural Map" }) },
-  ]);
+  const eggSeeds = [
+    { nest: "Minecraft", name: "Vanilla Minecraft Java", slug: "minecraft-vanilla-java", image: "itzg/minecraft-server:java21", startup: "java -Xms{{SERVER_MEMORY}}M -Xmx{{SERVER_MEMORY}}M -jar server.jar nogui", installScript: "mkdir -p /workspace && if [ ! -f /workspace/server.jar ]; then curl -fsSL https://piston-meta.mojang.com/mc/game/version_manifest_v2.json -o /tmp/manifest.json; VERSION=$(printf '%s' \"{{MINECRAFT_VERSION}}\" ); URL=$(node -e \"const m=require('/tmp/manifest.json'); console.log(m.versions.find(v=>v.id===process.argv[1])?.url||'')\" \"$VERSION\"); curl -fsSL \"$URL\" -o /tmp/version.json; curl -fsSL \"$(node -e \"console.log(require('/tmp/version.json').downloads.server.url)\")\" -o /workspace/server.jar; fi; printf 'eula=true\\n' > /workspace/eula.txt", environment: { MINECRAFT_VERSION: "1.21.8", SERVER_MEMORY: "2048" } },
+    { nest: "Minecraft", name: "Minecraft Bedrock", slug: "minecraft-bedrock", image: "itzg/minecraft-bedrock-server", startup: "LD_LIBRARY_PATH=. ./bedrock_server", installScript: "mkdir -p /workspace", environment: { VERSION: "LATEST", SERVER_MEMORY: "2048" } },
+    { nest: "Source Engine", name: "Counter-Strike 2", slug: "source-2-cs2", image: "cm2network/steamcmd:root", startup: "./game/bin/linuxsteamrt64/cs2 -dedicated -port {{SERVER_PORT}} +map {{MAP}}", installScript: "steamcmd +force_install_dir /workspace +login anonymous +app_update 730 validate +quit", environment: { MAP: "de_dust2", SERVER_PORT: "27015" } },
+    { nest: "Rust", name: "Rust Dedicated", slug: "rust-dedicated", image: "didstopia/rust-server:latest", startup: "./RustDedicated -batchmode +server.port {{SERVER_PORT}} +server.identity {{SERVER_IDENTITY}}", installScript: "mkdir -p /workspace", environment: { SERVER_PORT: "28015", SERVER_IDENTITY: "mystic" } },
+    { nest: "Terraria", name: "Terraria Vanilla", slug: "terraria-vanilla", image: "ryshe/terraria:latest", startup: "./TerrariaServer.bin.x86_64 -config /workspace/serverconfig.txt", installScript: "mkdir -p /workspace; test -f /workspace/serverconfig.txt || printf 'world=/workspace/world.wld\\nautocreate=2\\n' > /workspace/serverconfig.txt", environment: { MAX_PLAYERS: "16" } },
+    { nest: "Voice Servers", name: "Mumble", slug: "mumble", image: "mumblevoip/mumble-server:latest", startup: "./mumble-server -fg", installScript: "mkdir -p /workspace", environment: { MUMBLE_SUPERUSER_PASSWORD: "change-me" } },
+    { nest: "Steam Games", name: "Generic SteamCMD", slug: "steamcmd-generic", image: "cm2network/steamcmd:root", startup: "{{STARTUP_COMMAND}}", installScript: "steamcmd +force_install_dir /workspace +login anonymous +app_update {{STEAM_APP_ID}} validate +quit", environment: { STEAM_APP_ID: "90", STARTUP_COMMAND: "./hlds_run -game cstrike -port {{SERVER_PORT}}", SERVER_PORT: "27015" } },
+  ];
+  const existingEggs = await db.select({ slug: eggs.slug }).from(eggs);
+  const existingSlugs = new Set(existingEggs.map((row) => row.slug));
+  const missingEggs = eggSeeds.filter((egg) => !existingSlugs.has(egg.slug)).map((egg) => ({ nestId: byName.get(egg.nest)!, name: egg.name, slug: egg.slug, image: egg.image, startup: egg.startup, installScript: egg.installScript, environmentJson: JSON.stringify(egg.environment) }));
+  if (missingEggs.length) await db.insert(eggs).values(missingEggs);
 }
 
 export async function listServers() {
