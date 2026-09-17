@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { createAllocation, createDatabaseHost, createLocation, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createJob, getNode, listAllocations, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, seedCatalog, updateJob, updateScheduleEnabled, updateNodeStatus, updateServerStatus, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -131,6 +131,14 @@ export const appRouter = router({
           await updateJob(job.id, { status: "failed", progress: 100, message: "Reinstall failed", error: error instanceof Error ? error.message : "Reinstall failed" });
           throw error;
         }
+      }),
+    cancelInstall: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48) }))
+      .mutation(async ({ ctx, input }) => {
+        const server = await requireServerPermission(ctx, input.name, "control");
+        const result = await nodeCancelInstall(server.identifier);
+        await updateServerStatus(server.id, "failed");
+        return result;
       }),
     backups: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))

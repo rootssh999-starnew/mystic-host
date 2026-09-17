@@ -47,8 +47,9 @@ export function nodeStats(name: string) {
   return request<Record<string, unknown> & { name?: string; status?: string }>(`/v1/servers/${encodeURIComponent(name)}/stats`);
 }
 export function nodeInstallStatus(name: string) {
-  return request<{ name: string; status: string; progress: number; container: NodeServer }>(`/v1/servers/${encodeURIComponent(name)}/install-status`);
+  return request<{ name: string; status: string; progress: number; logs: string; container: NodeServer }>(`/v1/servers/${encodeURIComponent(name)}/install-status`);
 }
+export function nodeCancelInstall(name: string) { return request<{ name: string; status: string; preservedVolume: boolean }>(`/v1/servers/${encodeURIComponent(name)}/cancel-install`, { method: "POST" }); }
 export function nodeBackups(name: string) {
   return request<{ backups: Array<{ name: string; bytes: number; createdAt: string }> }>(`/v1/servers/${encodeURIComponent(name)}/backups`);
 }

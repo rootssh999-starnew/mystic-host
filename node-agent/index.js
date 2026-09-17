@@ -122,7 +122,15 @@ async function handle(req, res) {
     const marker = markers.find(Boolean);
     const info = await containerInfo(name);
     const status = marker === ".mystic-installed" ? "completed" : marker === ".mystic-install-failed" ? "failed" : marker === ".mystic-installing" ? "running" : info.status === "missing" ? "missing" : "pending";
-    return send(res, 200, { name, status, progress: status === "completed" ? 100 : status === "running" ? 50 : status === "failed" ? 100 : 0, container: info });
+    let logs = "";
+    try { logs = await docker(["logs", "--tail", "200", container]); } catch {}
+    return send(res, 200, { name, status, progress: status === "completed" ? 100 : status === "running" ? 50 : status === "failed" ? 100 : 0, logs, container: info });
+  }
+  if (req.method === "POST" && parts[3] === "cancel-install") {
+    await docker(["stop", "-t", "5", container]).catch(() => {});
+    await rm(path.join(serverRoot, ".mystic-installing"), { force: true });
+    await writeFile(path.join(serverRoot, ".mystic-install-failed"), "cancelled");
+    return send(res, 200, { name, status: "cancelled", preservedVolume: true });
   }
 
   if (req.method === "POST" && parts.length === 3) {
