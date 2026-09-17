@@ -418,6 +418,14 @@ export async function listServerDatabases(serverId: number) {
   return db.select().from(serverDatabases).where(eq(serverDatabases.serverId, serverId)).orderBy(desc(serverDatabases.id));
 }
 
+export async function getServerDatabase(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const rows = await db.select().from(serverDatabases).where(eq(serverDatabases.id, id)).limit(1);
+  if (!rows[0]) throw new Error("Server database not found");
+  return rows[0];
+}
+
 export async function createServerDatabase(input: typeof serverDatabases.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");

@@ -4,8 +4,8 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, getStoredFile, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDeleteBackup, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
-import { acquireServerOperation, addTeamMember, createAllocation, createBackupRecord, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerUser, deleteTeamMember, getNode, getNodeCapacity, listAllocations, listBackups, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, releaseServerOperation, seedCatalog, updateBackupRecord, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDeleteBackup, nodeDeleteDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
+import { acquireServerOperation, addTeamMember, createAllocation, createBackupRecord, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerDatabase, deleteServerUser, deleteTeamMember, getNode, getNodeCapacity, getServerDatabase, listAllocations, listBackups, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, releaseServerOperation, seedCatalog, updateBackupRecord, updateEgg, updateJob, updateNest, updateScheduleEnabled, updateNodeStatus, updateServerDatabase, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -128,7 +128,36 @@ export const appRouter = router({
     databaseHosts: adminProcedure.query(() => listDatabaseHosts()),
     createDatabaseHost: adminProcedure.input(z.object({ nodeId: z.number().int().positive(), name: z.string().min(1).max(100), hostname: z.string().min(1).max(255), port: z.number().int().min(1).max(65535), username: z.string().min(1).max(100), password: z.string().min(12).max(255) })).mutation(({ input }) => createDatabaseHost(input)),
     serverDatabases: adminProcedure.input(z.object({ serverId: z.number().int().positive() })).query(({ input }) => listServerDatabases(input.serverId)),
-    createServerDatabase: adminProcedure.input(z.object({ serverId: z.number().int().positive(), hostId: z.number().int().positive(), name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}$/), username: z.string().min(1).max(100), password: z.string().min(12).max(255) })).mutation(({ input }) => createServerDatabase(input)),
+    createServerDatabase: adminProcedure.input(z.object({ serverId: z.number().int().positive(), hostId: z.number().int().positive(), name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}$/), username: z.string().min(1).max(100), password: z.string().min(12).max(255) })).mutation(async ({ input }) => {
+      const server = (await listServers()).find((item) => item.id === input.serverId);
+      if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
+      acquireServerOperation(server.id, "database-create");
+      let created = false;
+      try {
+        await nodeCreateDatabase(server.identifier, input.name, input.username, input.password);
+        created = true;
+        return await createServerDatabase(input);
+      } catch (error) {
+        if (created) await nodeDeleteDatabase(server.identifier, input.name).catch(() => {});
+        throw error;
+      } finally { releaseServerOperation(server.id); }
+    }),
+    deleteServerDatabase: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => {
+      const database = await getServerDatabase(input.id);
+      const server = (await listServers()).find((item) => item.id === database.serverId);
+      if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
+      acquireServerOperation(server.id, "database-delete");
+      try { await nodeDeleteDatabase(server.identifier, database.name); await deleteServerDatabase(database.id); return { success: true } as const; }
+      finally { releaseServerOperation(server.id); }
+    }),
+    rotateServerDatabasePassword: adminProcedure.input(z.object({ id: z.number().int().positive(), oldPassword: z.string().min(1).max(255), newPassword: z.string().min(12).max(255) })).mutation(async ({ input }) => {
+      const database = await getServerDatabase(input.id);
+      const server = (await listServers()).find((item) => item.id === database.serverId);
+      if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
+      acquireServerOperation(server.id, "database-rotate-password");
+      try { const result = await nodeRotateDatabasePassword(server.identifier, database.name, database.username, input.oldPassword, input.newPassword); await updateServerDatabase(database.id, { password: input.newPassword }); return result; }
+      finally { releaseServerOperation(server.id); }
+    }),
     nodeConfig: adminProcedure.input(z.object({ nodeId: z.number().int().positive() })).query(async ({ input }) => { const node = await getNode(input.nodeId); return { debug: false, uuid: String(node.id), token: node.daemonToken, api: { host: "0.0.0.0", port: node.daemonPort, ssl: { enabled: node.scheme === "https", cert: `/etc/letsencrypt/live/${node.fqdn}/fullchain.pem`, key: `/etc/letsencrypt/live/${node.fqdn}/privkey.pem` }, upload_limit: 100 }, system: { data: "/var/lib/mystic-host/volumes", sftp: { bind_port: node.sftpPort } }, remote: `${node.scheme}://${node.fqdn}` }; }),
   }),
   node: router({
