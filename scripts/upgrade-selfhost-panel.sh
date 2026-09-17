@@ -37,7 +37,13 @@ if [[ -d "$PANEL_DIR/dist" ]]; then mv "$PANEL_DIR/dist" "$PANEL_DIR/dist.previo
 mv "$PANEL_DIR/dist.new" "$PANEL_DIR/dist"
 cd "$PANEL_DIR"
 pnpm install --frozen-lockfile --ignore-scripts >/tmp/mystic-host-panel-upgrade-pnpm.log
-chown -R ubuntu:ubuntu "$PANEL_DIR"
+SERVICE_USER=$(systemctl show mystic-host-panel -p User --value)
+SERVICE_GROUP=$(systemctl show mystic-host-panel -p Group --value)
+SERVICE_USER=${SERVICE_USER:-root}
+SERVICE_GROUP=${SERVICE_GROUP:-$SERVICE_USER}
+if id "$SERVICE_USER" >/dev/null 2>&1 && getent group "$SERVICE_GROUP" >/dev/null 2>&1; then
+  chown -R "$SERVICE_USER:$SERVICE_GROUP" "$PANEL_DIR"
+fi
 systemctl restart mystic-host-panel
 sleep 2
 if ! systemctl is-active --quiet mystic-host-panel || ! curl -fsS http://127.0.0.1:3000/ >/dev/null; then
