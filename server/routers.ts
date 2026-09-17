@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, getStoredFile, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeDeleteBackup, nodeDeleteDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeResources, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeCreateFolder, nodeDeleteBackup, nodeDeleteDatabase, nodeDownloadFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeResources, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { acquireServerOperation, addTeamMember, createAllocation, createBackupRecord, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, deleteEgg, deleteNest, deleteServerDatabase, deleteServerUser, deleteTeamMember, getNode, getNodeCapacity, getServerDatabase, listAllocations, listBackups, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodeCapacities, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, releaseServerOperation, seedCatalog, updateBackupRecord, updateEgg, updateJob, updateNest, updatePersistentServer, updateScheduleEnabled, updateNodeStatus, updateServerDatabase, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -308,6 +308,9 @@ export const appRouter = router({
         await nodeUploadFile(input.serverName, name, buffer);
         return createStoredFile({ userId: ctx.user.id, serverName: input.serverName, originalName: input.fileName, storageKey: upload.key, storageUrl: upload.url, mimeType, size: buffer.byteLength });
       }),
+    createFolder: protectedProcedure
+      .input(z.object({ serverName: z.string().min(1).max(100), folderName: z.string().min(1).max(180) }))
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeCreateFolder(input.serverName, safeFileName(input.folderName)); }),
     extract: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255) }))
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeExtractZip(input.serverName, safeFileName(input.fileName)); }),
