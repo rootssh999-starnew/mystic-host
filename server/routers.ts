@@ -91,6 +91,17 @@ export const appRouter = router({
     exportEgg: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => { const row = (await listEggs()).find((egg) => egg.id === input.id); if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Egg not found" }); return { version: 1, egg: row }; }),
     importEgg: adminProcedure.input(z.object({ nestId: z.number().int().positive(), egg: z.object({ name: z.string().min(1).max(100), slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,99}$/), image: z.string().min(1).max(255), startup: z.string().min(1).max(500), installScript: z.string().max(100000), environmentJson: z.string().max(20000) }) })).mutation(({ input }) => createEgg({ ...input.egg, nestId: input.nestId })),
     servers: adminProcedure.query(() => listServers()),
+    serverAction: adminProcedure.input(z.object({ id: z.number().int().positive(), action: z.enum(["start", "stop", "restart"]) })).mutation(async ({ input }) => {
+      const server = (await listServers()).find((item) => item.id === input.id);
+      if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
+      if (!["offline", "running"].includes(server.status)) throw new TRPCError({ code: "CONFLICT", message: `Server is ${server.status} and cannot be controlled now` });
+      acquireServerOperation(server.id, `server-${input.action}`);
+      try {
+        await nodeAction(server.identifier, input.action);
+        await updateServerStatus(server.id, input.action === "stop" ? "offline" : "running");
+        return { success: true, status: input.action === "stop" ? "offline" : "running" } as const;
+      } finally { releaseServerOperation(server.id); }
+    }),
     createPersistentServer: adminProcedure
       .input(z.object({ ownerId: z.number().int().positive(), nodeId: z.number().int().positive(), allocationId: z.number().int().positive().optional(), eggId: z.number().int().positive().optional(), name: z.string().min(2).max(48), runtime: z.string().min(1), image: z.string().min(1), startup: z.string().min(1), installScript: z.string().max(100000).optional(), variablesJson: z.string().max(20000).optional(), memoryMb: z.number().int().min(128).max(65536), diskMb: z.number().int().min(128).max(1048576), cpu: z.number().min(0.1).max(64) }))
       .mutation(async ({ input }) => {
