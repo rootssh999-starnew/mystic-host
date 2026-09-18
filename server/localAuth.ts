@@ -55,19 +55,20 @@ export function registerLocalAuthRoutes(app: Express) {
     res.clearCookie(COOKIE_NAME, getSessionCookieOptions(req));
     return res.json({ success: true });
   });
-  app.post("/api/local/logout", async (req: Request, res: Response) => { res.clearCookie(COOKIE_NAME, getSessionCookieOptions(req)); return res.json({ success: true }); });
+  app.post("/api/local/logout", async (req: Request, res: Response) => { const user = await requestUser(req); if (user) await db.recordAuditEvent({ userId: user.id, action: "auth.logout", detail: "User logged out" }); res.clearCookie(COOKIE_NAME, getSessionCookieOptions(req)); return res.json({ success: true }); });
   app.post("/api/local/invitations/accept", async (req: Request, res: Response) => {
     const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
     const password = typeof req.body?.password === "string" ? req.body.password : "";
     const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 120) : "";
     if (!token || password.length < 12 || password.length > 256) return res.status(400).json({ error: "A valid invitation token and password of at least 12 characters are required" });
     const invitation = await db.consumeInvitation(token);
-    if (!invitation) return res.status(400).json({ error: "Invitation is invalid, expired, used, or revoked" });
-    if (await db.getUserByEmail(invitation.email)) return res.status(409).json({ error: "An account already exists for this email" });
+    if (!invitation) { await db.recordAuditEvent({ action: "invitation.accept_failed", detail: "Invitation acceptance failed" }); return res.status(400).json({ error: "Invitation is invalid, expired, used, or revoked" }); }
+    if (await db.getUserByEmail(invitation.email)) { await db.recordAuditEvent({ action: "invitation.accept_failed", detail: "Invitation acceptance rejected because the account already exists", metadata: { role: invitation.role } }); return res.status(409).json({ error: "An account already exists for this email" }); }
     const openId = `local:${invitation.email}`;
     await db.upsertUser({ openId, email: invitation.email, name: name || invitation.email.split("@")[0], passwordHash: hashPassword(password), loginMethod: "invitation", role: invitation.role });
     const createdUser = await db.getUserByOpenId(openId);
     const sessionToken = await sdk.createSessionToken(openId, { name: name || invitation.email, expiresInMs: ONE_YEAR_MS, sessionVersion: createdUser?.sessionVersion ?? 0 });
+    await db.recordAuditEvent({ userId: createdUser?.id, action: "invitation.accepted", detail: "Invitation accepted", metadata: { role: invitation.role } });
     res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
     return res.json({ success: true });
   });
@@ -77,11 +78,12 @@ export function registerLocalAuthRoutes(app: Express) {
     if (!email || !password || email.length > 320 || password.length > 256) return res.status(400).json({ error: "Email and password are required" });
     const key = `${req.ip}:${email}`; if (!allowedLogin(key)) return res.status(429).json({ error: "Too many login attempts; try again later" });
     const user = await db.getUserByEmail(email);
-    if (!user?.passwordHash || !verifyPassword(password, user.passwordHash)) return res.status(401).json({ error: "Invalid email or password" });
-    if (user.disabled) return res.status(403).json({ error: "Account disabled" });
-    if (user.totpEnabled && user.totpSecretEncrypted) { const code = String(req.body?.code || ""); let valid = /^\d{6}$/.test(code) && validTotp(decryptSecret(user.totpSecretEncrypted), code); if (!valid && code) { try { const hashes = JSON.parse(user.recoveryCodesHash || "[]") as string[]; const hash = recoveryHash(code); const index = hashes.indexOf(hash); if (index >= 0) { hashes.splice(index, 1); await db.updateUserTwoFactor(user.id, { recoveryCodesHash: JSON.stringify(hashes) }); valid = true; } } catch {} } if (!valid) return res.status(401).json({ error: "Two-factor authentication code required" }); }
+    if (!user?.passwordHash || !verifyPassword(password, user.passwordHash)) { await db.recordAuditEvent({ userId: user?.id, action: "auth.login_failed", detail: "Invalid local login credentials" }); return res.status(401).json({ error: "Invalid email or password" }); }
+    if (user.disabled) { await db.recordAuditEvent({ userId: user.id, action: "auth.login_failed", detail: "Login rejected for disabled account" }); return res.status(403).json({ error: "Account disabled" }); }
+    if (user.totpEnabled && user.totpSecretEncrypted) { const code = String(req.body?.code || ""); let valid = /^\d{6}$/.test(code) && validTotp(decryptSecret(user.totpSecretEncrypted), code); if (!valid && code) { try { const hashes = JSON.parse(user.recoveryCodesHash || "[]") as string[]; const hash = recoveryHash(code); const index = hashes.indexOf(hash); if (index >= 0) { hashes.splice(index, 1); await db.updateUserTwoFactor(user.id, { recoveryCodesHash: JSON.stringify(hashes) }); valid = true; } } catch {} } if (!valid) { await db.recordAuditEvent({ userId: user.id, action: "auth.login_failed", detail: "Login rejected because two-factor authentication failed" }); return res.status(401).json({ error: "Two-factor authentication code required" }); } }
     await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
     const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || email, expiresInMs: ONE_YEAR_MS, sessionVersion: user.sessionVersion });
+    await db.recordAuditEvent({ userId: user.id, action: "auth.login_succeeded", detail: "Local login succeeded" });
     res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
     return res.json({ success: true });
   });
