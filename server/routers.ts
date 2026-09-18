@@ -15,6 +15,7 @@ import { hasPermission } from "@shared/permissions";
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 async function requireServerPermission(ctx: { user: { id: number; role: string } }, name: string, permission: string) { const access = await getServerAccess(name, ctx.user.id, ctx.user.role); if (!hasPermission(access.permissions, permission)) throw new TRPCError({ code: "FORBIDDEN", message: `Missing server permission: ${permission}` }); return access.server; }
+function safeRelativeFilePath(value: string) { const parts = value.split("/").filter(Boolean); if (!parts.length || parts.some((part) => part === "." || part === "..")) throw new Error("Invalid file path"); return parts.map(safeFileName).join("/"); }
 function safeFileName(value: string) {
   const trimmed = value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");
   return trimmed.slice(0, 180) || "uploaded-file";
@@ -298,25 +299,25 @@ export const appRouter = router({
       .input(z.object({ serverName: z.string().min(1).max(100) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.read"); return listStoredFiles(ctx.user.id, input.serverName); }),
     upload: protectedProcedure
-      .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255), mimeType: z.string().min(1).max(150), size: z.number().int().nonnegative().max(MAX_UPLOAD_BYTES), dataUrl: z.string().min(1) }))
+      .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(500), mimeType: z.string().min(1).max(150), size: z.number().int().nonnegative().max(MAX_UPLOAD_BYTES), dataUrl: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
         const { mimeType, buffer } = decodeDataUrl(input.dataUrl);
         if (input.size !== buffer.byteLength) throw new Error("File size did not match the uploaded payload");
         await requireServerPermission(ctx, input.serverName, "file.write");
-        const name = safeFileName(input.fileName);
+        const name = safeRelativeFilePath(input.fileName);
         const upload = await storagePut(`${ctx.user.id}/servers/${input.serverName}/${name}`, buffer, mimeType);
         await nodeUploadFile(input.serverName, name, buffer);
         return createStoredFile({ userId: ctx.user.id, serverName: input.serverName, originalName: input.fileName, storageKey: upload.key, storageUrl: upload.url, mimeType, size: buffer.byteLength });
       }),
     readText: protectedProcedure
-      .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.read"); const result = await nodeDownloadFile(input.serverName, safeFileName(input.fileName)); if (result.bytes > 256 * 1024) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Only text files up to 256 KB can be edited" }); return { fileName: input.fileName, content: Buffer.from(result.dataBase64, "base64").toString("utf8") }; }),
+      .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(500) }))
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.read"); const result = await nodeDownloadFile(input.serverName, safeRelativeFilePath(input.fileName)); if (result.bytes > 256 * 1024) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Only text files up to 256 KB can be edited" }); return { fileName: input.fileName, content: Buffer.from(result.dataBase64, "base64").toString("utf8") }; }),
     writeText: protectedProcedure
-      .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255), content: z.string().max(262144) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); await nodeUploadFile(input.serverName, safeFileName(input.fileName), Buffer.from(input.content, "utf8")); return { success: true, fileName: input.fileName }; }),
+      .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(500), content: z.string().max(262144) }))
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); await nodeUploadFile(input.serverName, safeRelativeFilePath(input.fileName), Buffer.from(input.content, "utf8")); return { success: true, fileName: input.fileName }; }),
     createFolder: protectedProcedure
-      .input(z.object({ serverName: z.string().min(1).max(100), folderName: z.string().min(1).max(180) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeCreateFolder(input.serverName, safeFileName(input.folderName)); }),
+      .input(z.object({ serverName: z.string().min(1).max(100), folderName: z.string().min(1).max(500) }))
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeCreateFolder(input.serverName, safeRelativeFilePath(input.folderName)); }),
     extract: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255) }))
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeExtractZip(input.serverName, safeFileName(input.fileName)); }),
