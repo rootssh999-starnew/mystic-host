@@ -303,6 +303,9 @@ export const appRouter = router({
     runSchedule: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), scheduleId: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "schedule.update"); const schedule = (await listSchedules(server.id)).find(row => row.id === input.scheduleId); if (!schedule) throw new TRPCError({ code: "NOT_FOUND", message: "Schedule not found" }); const runId = await createScheduleRun(schedule.id); try { const result = schedule.action === "command" ? await nodeCommand(input.name, schedule.payload || "") : await nodeAction(input.name, schedule.action); await finishScheduleRun(runId, "completed"); return result; } catch (error) { await finishScheduleRun(runId, "failed", error instanceof Error ? error.message : "Schedule failed"); throw error; } }),
+    activity: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48) }))
+      .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "activity.read"); const [jobs, schedules] = await Promise.all([listJobs(server.id), listSchedules(server.id)]); const runs = (await Promise.all(schedules.map((schedule) => listScheduleRuns(schedule.id).then((items) => items.map((run) => ({ ...run, scheduleName: schedule.name })))))).flat(); return { jobs: jobs.slice(0, 50), runs: runs.slice(0, 50) }; }),
     network: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "network.read"); const allocations = await listAllocations(server.nodeId); return { serverId: server.id, nodeId: server.nodeId, assigned: allocations.filter((item) => item.serverId === server.id), available: allocations.filter((item) => item.serverId === null) }; }),
