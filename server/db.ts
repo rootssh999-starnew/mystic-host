@@ -19,8 +19,26 @@ export async function getDb() {
   return _db;
 }
 
-export async function recordAuditEvent(input: { userId?: number | null; serverId?: number | null; action: string; detail: string; metadata?: unknown }) { const database = await getDb(); if (!database) return; await database.insert(auditEvents).values({ userId: input.userId ?? null, serverId: input.serverId ?? null, action: input.action.slice(0, 120), detail: input.detail.slice(0, 500), metadataJson: input.metadata === undefined ? null : JSON.stringify(input.metadata) }); }
-export async function listAuditEvents(limit = 100) { const database = await getDb(); if (!database) return []; return database.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(Math.min(limit, 500)); }
+const SENSITIVE_AUDIT_KEYS = /password|token|secret|private.?key|credential|authorization|cookie/i;
+
+export function sanitizeAuditMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeAuditMetadata);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !SENSITIVE_AUDIT_KEYS.test(key)).map(([key, item]) => [key, sanitizeAuditMetadata(item)]));
+}
+
+export async function recordAuditEvent(input: { userId?: number | null; serverId?: number | null; action: string; detail: string; metadata?: unknown }) {
+  const database = await getDb();
+  if (!database) return;
+  await database.insert(auditEvents).values({ userId: input.userId ?? null, serverId: input.serverId ?? null, action: input.action.slice(0, 120), detail: input.detail.slice(0, 500), metadataJson: input.metadata === undefined ? null : JSON.stringify(sanitizeAuditMetadata(input.metadata)) });
+}
+
+export async function listAuditEvents(input: { limit?: number; offset?: number; action?: string; serverId?: number; userId?: number } = {}) {
+  const database = await getDb();
+  if (!database) return [];
+  const filters = [input.action ? eq(auditEvents.action, input.action) : undefined, input.serverId ? eq(auditEvents.serverId, input.serverId) : undefined, input.userId ? eq(auditEvents.userId, input.userId) : undefined].filter(Boolean);
+  return database.select().from(auditEvents).where(filters.length ? and(...filters) : undefined).orderBy(desc(auditEvents.createdAt), desc(auditEvents.id)).limit(Math.min(Math.max(input.limit ?? 100, 1), 500)).offset(Math.max(input.offset ?? 0, 0));
+}
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");

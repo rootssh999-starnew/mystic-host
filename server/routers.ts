@@ -51,28 +51,28 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
-    logoutAllSessions: protectedProcedure.mutation(async ({ ctx }) => { await invalidateUserSessions(ctx.user.id); const cookieOptions = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 }); return { success: true } as const; }),
+    logoutAllSessions: protectedProcedure.mutation(async ({ ctx }) => { await invalidateUserSessions(ctx.user.id); await recordAuditEvent({ userId: ctx.user.id, action: "auth.logout_all", detail: "All user sessions invalidated" }); const cookieOptions = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 }); return { success: true } as const; }),
     apiKeys: router({
       list: protectedProcedure.query(({ ctx }) => listApiKeys(ctx.user.id)),
-      create: protectedProcedure.input(z.object({ name: z.string().min(1).max(100), scopes: z.array(z.string().min(1).max(100)).min(1).max(50) })).mutation(({ ctx, input }) => createApiKey(ctx.user.id, input.name, input.scopes)),
-      revoke: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => revokeApiKey(ctx.user.id, input.id)),
+      create: protectedProcedure.input(z.object({ name: z.string().min(1).max(100), scopes: z.array(z.string().min(1).max(100)).min(1).max(50) })).mutation(async ({ ctx, input }) => { const result = await createApiKey(ctx.user.id, input.name, input.scopes); await recordAuditEvent({ userId: ctx.user.id, action: "api_key.created", detail: `API key created: ${input.name}`, metadata: { scopes: input.scopes } }); return result; }),
+      revoke: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => { const result = await revokeApiKey(ctx.user.id, input.id); await recordAuditEvent({ userId: ctx.user.id, action: "api_key.revoked", detail: `API key revoked: ${input.id}`, metadata: { keyId: input.id } }); return result; }),
     }),
     invitations: router({
       list: adminProcedure.query(() => listInvitations()),
-      create: adminProcedure.input(z.object({ email: z.string().email().max(320), role: z.enum(["user", "admin"]).default("user"), expiresInHours: z.number().int().min(1).max(720).default(72) })).mutation(({ ctx, input }) => createInvitation({ email: input.email, role: input.role, createdBy: ctx.user.id, expiresAt: new Date(Date.now() + input.expiresInHours * 3600000) })),
-      revoke: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => revokeInvitation(input.id)),
+      create: adminProcedure.input(z.object({ email: z.string().email().max(320), role: z.enum(["user", "admin"]).default("user"), expiresInHours: z.number().int().min(1).max(720).default(72) })).mutation(async ({ ctx, input }) => { const result = await createInvitation({ email: input.email, role: input.role, createdBy: ctx.user.id, expiresAt: new Date(Date.now() + input.expiresInHours * 3600000) }); await recordAuditEvent({ userId: ctx.user.id, action: "invitation.created", detail: `Invitation created for ${input.email.toLowerCase()}`, metadata: { role: input.role, expiresInHours: input.expiresInHours } }); return result; }),
+      revoke: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => { const result = await revokeInvitation(input.id); await recordAuditEvent({ userId: ctx.user.id, action: "invitation.revoked", detail: `Invitation revoked: ${input.id}`, metadata: { invitationId: input.id } }); return result; }),
     }),
   }),
   admin: router({
     overview: adminProcedure.query(() => getAdminOverview()),
     users: adminProcedure.query(() => listUsers()),
-    updateUser: adminProcedure.input(z.object({ userId: z.number().int().positive(), role: z.enum(["user", "admin"]).optional(), disabled: z.boolean().optional() })).mutation(({ input }) => updateUserAdmin(input.userId, { role: input.role, disabled: input.disabled === undefined ? undefined : (input.disabled ? 1 : 0) })),
+    updateUser: adminProcedure.input(z.object({ userId: z.number().int().positive(), role: z.enum(["user", "admin"]).optional(), disabled: z.boolean().optional() })).mutation(async ({ ctx, input }) => { const result = await updateUserAdmin(input.userId, { role: input.role, disabled: input.disabled === undefined ? undefined : (input.disabled ? 1 : 0) }); await recordAuditEvent({ userId: ctx.user.id, action: input.role ? "user.role_changed" : "user.status_changed", detail: `User ${input.userId} updated`, metadata: { targetUserId: input.userId, role: input.role, disabled: input.disabled } }); return result; }),
     teams: adminProcedure.query(({ ctx }) => listTeams(ctx.user.id)),
     createTeam: adminProcedure.input(z.object({ name: z.string().min(1).max(100), description: z.string().max(500).default("") })).mutation(({ ctx, input }) => createTeam({ ownerId: ctx.user.id, name: input.name, description: input.description })),
     teamMembers: adminProcedure.input(z.object({ teamId: z.number().int().positive() })).query(({ input }) => listTeamMembers(input.teamId)),
-    addTeamMember: adminProcedure.input(z.object({ teamId: z.number().int().positive(), userId: z.number().int().positive(), role: z.enum(["manager", "member"]).default("member") })).mutation(({ input }) => addTeamMember(input)),
-    updateTeamMember: adminProcedure.input(z.object({ id: z.number().int().positive(), role: z.enum(["manager", "member"]) })).mutation(({ input }) => updateTeamMember(input.id, input.role)),
-    deleteTeamMember: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => deleteTeamMember(input.id)),
+    addTeamMember: adminProcedure.input(z.object({ teamId: z.number().int().positive(), userId: z.number().int().positive(), role: z.enum(["manager", "member"]).default("member") })).mutation(async ({ ctx, input }) => { const result = await addTeamMember(input); await recordAuditEvent({ userId: ctx.user.id, action: "team.member_added", detail: `Team member ${input.userId} added`, metadata: { teamId: input.teamId, memberUserId: input.userId, role: input.role } }); return result; }),
+    updateTeamMember: adminProcedure.input(z.object({ id: z.number().int().positive(), role: z.enum(["manager", "member"]) })).mutation(async ({ ctx, input }) => { const result = await updateTeamMember(input.id, input.role); await recordAuditEvent({ userId: ctx.user.id, action: "team.member_role_changed", detail: `Team member ${input.id} role changed`, metadata: { membershipId: input.id, role: input.role } }); return result; }),
+    deleteTeamMember: adminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => { const result = await deleteTeamMember(input.id); await recordAuditEvent({ userId: ctx.user.id, action: "team.member_removed", detail: `Team member ${input.id} removed`, metadata: { membershipId: input.id } }); return result; }),
     nodeHealth: adminProcedure.query(() => nodeHealth()),
     nodeResources: adminProcedure.query(() => nodeResources()),
     nodeServers: adminProcedure.query(() => listNodeServers()),
@@ -97,15 +97,15 @@ export const appRouter = router({
     servers: adminProcedure.query(() => listServers()),
     backups: adminProcedure.query(async () => { const servers = await listServers(); const rows = await Promise.all(servers.map(async (server) => (await listBackups(server.id)).map((backup) => ({ ...backup, serverId: server.id, serverName: server.name, identifier: server.identifier })))); return rows.flat(); }),
     scheduleInventory: adminProcedure.query(async () => { const servers = await listServers(); const rows = await Promise.all(servers.map(async (server) => { const schedules = await listSchedules(server.id); return Promise.all(schedules.map(async (schedule) => ({ ...schedule, serverId: server.id, serverName: server.name, runs: await listScheduleRuns(schedule.id) }))); })); return rows.flat(); }),
-    auditTimeline: adminProcedure.query(async () => { const persistent = await listAuditEvents(100); const [servers, jobs] = await Promise.all([listServers(), listJobs()]); const serverById = new Map(servers.map((server) => [server.id, server])); const events = jobs.map((job) => ({ id: `job-${job.id}`, kind: job.status === "failed" ? "error" : "operation", title: job.type, detail: job.message || job.error || job.status, serverName: job.serverId ? serverById.get(job.serverId)?.name ?? "Unknown server" : "Platform", at: job.updatedAt ?? job.createdAt })); for (const server of servers) events.push({ id: `server-${server.id}`, kind: "lifecycle", title: "server.updated", detail: `${server.status} · ${server.identifier}`, serverName: server.name, at: server.updatedAt }); return [...persistent.map((event) => ({ id: `audit-${event.id}`, kind: "audit", title: event.action, detail: event.detail, serverName: event.serverId ? serverById.get(event.serverId)?.name ?? "Unknown server" : "Platform", at: event.createdAt })), ...events].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 100); }),
-    serverAction: adminProcedure.input(z.object({ id: z.number().int().positive(), action: z.enum(["start", "stop", "restart", "kill"]) })).mutation(async ({ input }) => {
+    auditTimeline: adminProcedure.input(z.object({ limit: z.number().int().min(1).max(500).default(100), offset: z.number().int().min(0).default(0), action: z.string().min(1).max(120).optional(), serverId: z.number().int().positive().optional(), userId: z.number().int().positive().optional() }).default({ limit: 100, offset: 0 })).query(async ({ input }) => { const persistent = await listAuditEvents(input); const [servers, jobs] = await Promise.all([listServers(), listJobs()]); const serverById = new Map(servers.map((server) => [server.id, server])); const events = jobs.map((job) => ({ id: `job-${job.id}`, kind: job.status === "failed" ? "error" : "operation", title: job.type, detail: job.message || job.error || job.status, serverName: job.serverId ? serverById.get(job.serverId)?.name ?? "Unknown server" : "Platform", at: job.updatedAt ?? job.createdAt })); for (const server of servers) events.push({ id: `server-${server.id}`, kind: "lifecycle", title: "server.updated", detail: `${server.status} · ${server.identifier}`, serverName: server.name, at: server.updatedAt }); return [...persistent.map((event) => ({ id: `audit-${event.id}`, kind: "audit", title: event.action, detail: event.detail, serverName: event.serverId ? serverById.get(event.serverId)?.name ?? "Unknown server" : "Platform", at: event.createdAt })), ...events].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(input.offset, input.offset + input.limit); }),
+    serverAction: adminProcedure.input(z.object({ id: z.number().int().positive(), action: z.enum(["start", "stop", "restart", "kill"]) })).mutation(async ({ ctx, input }) => {
       const server = (await listServers()).find((item) => item.id === input.id);
       if (!server) throw new TRPCError({ code: "NOT_FOUND", message: "Server not found" });
       if (!["offline", "running"].includes(server.status)) throw new TRPCError({ code: "CONFLICT", message: `Server is ${server.status} and cannot be controlled now` });
       acquireServerOperation(server.id, `server-${input.action}`);
       try {
         await nodeAction(server.identifier, input.action);
-        await updateServerStatus(server.id, input.action === "stop" ? "offline" : "running"); await recordAuditEvent({ userId: undefined, serverId: server.id, action: "server." + input.action, detail: "Server power action executed" });
+        await updateServerStatus(server.id, input.action === "stop" ? "offline" : "running"); await recordAuditEvent({ userId: ctx.user.id, serverId: server.id, action: "server." + input.action, detail: "Server power action executed" });
         return { success: true, status: input.action === "stop" ? "offline" : "running" } as const;
       } finally { releaseServerOperation(server.id); }
     }),
@@ -290,7 +290,7 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "schedule.read"); return listSchedules(server.id); }),
     createSchedule: protectedProcedure
       .input(z.object({ name: z.string().min(1).max(100), scheduleName: z.string().min(1).max(100), cron: z.string().regex(/^(\S+\s+){4}\S+$/), action: z.enum(["start", "stop", "restart", "command"]), payload: z.string().max(2000).optional() }))
-      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "schedule.update"); const created = await createSchedule({ serverId: server.id, name: input.scheduleName, cron: input.cron, action: input.action, payload: input.payload || null, enabled: 1 }); await recordAuditEvent({ serverId: server.id, action: "schedule.created", detail: input.scheduleName }); return created; }),
+      .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "schedule.update"); const created = await createSchedule({ serverId: server.id, name: input.scheduleName, cron: input.cron, action: input.action, payload: input.payload || null, enabled: 1 }); await recordAuditEvent({ userId: ctx.user.id, serverId: server.id, action: "schedule.created", detail: input.scheduleName, metadata: { cron: input.cron, action: input.action } }); return created; }),
     toggleSchedule: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), scheduleId: z.number().int().positive(), enabled: z.boolean() }))
       .mutation(async ({ ctx, input }) => { const server = await requireServerPermission(ctx, input.name, "schedule.update"); const rows = await listSchedules(server.id); if (!rows.some(row => row.id === input.scheduleId)) throw new TRPCError({ code: "NOT_FOUND", message: "Schedule not found" }); await updateScheduleEnabled(input.scheduleId, input.enabled ? 1 : 0); return { success: true }; }),
@@ -317,13 +317,13 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.read"); return nodeListDatabases(input.serverName); }),
     deleteDatabase: protectedProcedure
       .input(z.object({ serverName: z.string().min(2).max(48), database: z.string().min(1).max(48) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.delete"); return nodeDeleteDatabase(input.serverName, input.database); }),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.delete"); const result = await nodeDeleteDatabase(input.serverName, input.database); await recordAuditEvent({ userId: ctx.user.id, action: "database.deleted", detail: input.database, metadata: { serverName: input.serverName, database: input.database } }); return result; }),
     rotateDatabasePassword: protectedProcedure
       .input(z.object({ serverName: z.string().min(2).max(48), database: z.string().min(1).max(48), username: z.string().min(1).max(48), oldPassword: z.string().min(1).max(255), newPassword: z.string().min(12).max(255) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.rotate"); return nodeRotateDatabasePassword(input.serverName, input.database, input.username, input.oldPassword, input.newPassword); }),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.rotate"); const result = await nodeRotateDatabasePassword(input.serverName, input.database, input.username, input.oldPassword, input.newPassword); await recordAuditEvent({ userId: ctx.user.id, action: "database.password_rotated", detail: input.database, metadata: { serverName: input.serverName, database: input.database, username: input.username } }); return result; }),
     createDatabase: protectedProcedure
       .input(z.object({ serverName: z.string().min(2).max(48), name: z.string().min(1).max(48), username: z.string().min(1).max(48), password: z.string().min(12).max(255) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.create"); const result = await nodeCreateDatabase(input.serverName, input.name, input.username, input.password); await recordAuditEvent({ action: "database.created", detail: input.name }); return result; }),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.create"); const result = await nodeCreateDatabase(input.serverName, input.name, input.username, input.password); await recordAuditEvent({ userId: ctx.user.id, action: "database.created", detail: input.name, metadata: { serverName: input.serverName, database: input.name, username: input.username } }); return result; }),
   }),
   files: router({
     list: protectedProcedure
@@ -338,26 +338,28 @@ export const appRouter = router({
         const name = safeRelativeFilePath(input.fileName);
         const upload = await storagePut(`${ctx.user.id}/servers/${input.serverName}/${name}`, buffer, mimeType);
         await nodeUploadFile(input.serverName, name, buffer);
-        return createStoredFile({ userId: ctx.user.id, serverName: input.serverName, originalName: input.fileName, storageKey: upload.key, storageUrl: upload.url, mimeType, size: buffer.byteLength });
+        const created = await createStoredFile({ userId: ctx.user.id, serverName: input.serverName, originalName: input.fileName, storageKey: upload.key, storageUrl: upload.url, mimeType, size: buffer.byteLength });
+        await recordAuditEvent({ userId: ctx.user.id, action: "file.uploaded", detail: `File uploaded: ${input.fileName}`, metadata: { serverName: input.serverName, fileName: input.fileName, size: buffer.byteLength, mimeType } });
+        return created;
       }),
     readText: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(500) }))
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.read"); const result = await nodeDownloadFile(input.serverName, safeRelativeFilePath(input.fileName)); if (result.bytes > 256 * 1024) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Only text files up to 256 KB can be edited" }); return { fileName: input.fileName, content: Buffer.from(result.dataBase64, "base64").toString("utf8") }; }),
     writeText: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(500), content: z.string().max(262144) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); await nodeUploadFile(input.serverName, safeRelativeFilePath(input.fileName), Buffer.from(input.content, "utf8")); return { success: true, fileName: input.fileName }; }),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); await nodeUploadFile(input.serverName, safeRelativeFilePath(input.fileName), Buffer.from(input.content, "utf8")); await recordAuditEvent({ userId: ctx.user.id, action: "file.written", detail: `File written: ${input.fileName}`, metadata: { serverName: input.serverName, fileName: input.fileName, bytes: Buffer.byteLength(input.content, "utf8") } }); return { success: true, fileName: input.fileName }; }),
     renameLive: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(500), newName: z.string().min(1).max(255) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); const source = safeRelativeFilePath(input.fileName); const destination = [...source.split("/").slice(0, -1), safeFileName(input.newName)].filter(Boolean).join("/"); return nodeRenameFile(input.serverName, source, destination); }),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); const source = safeRelativeFilePath(input.fileName); const destination = [...source.split("/").slice(0, -1), safeFileName(input.newName)].filter(Boolean).join("/"); const result = await nodeRenameFile(input.serverName, source, destination); await recordAuditEvent({ userId: ctx.user.id, action: "file.renamed", detail: `File renamed: ${input.fileName}`, metadata: { serverName: input.serverName, source, destination } }); return result; }),
     deleteLive: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(500) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeDeleteFile(input.serverName, safeRelativeFilePath(input.fileName)); }),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); const fileName = safeRelativeFilePath(input.fileName); const result = await nodeDeleteFile(input.serverName, fileName); await recordAuditEvent({ userId: ctx.user.id, action: "file.deleted", detail: `File deleted: ${input.fileName}`, metadata: { serverName: input.serverName, fileName } }); return result; }),
     createFolder: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), folderName: z.string().min(1).max(500) }))
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeCreateFolder(input.serverName, safeRelativeFilePath(input.folderName)); }),
     extract: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255) }))
-      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); return nodeExtractZip(input.serverName, safeFileName(input.fileName)); }),
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "file.write"); const fileName = safeFileName(input.fileName); const result = await nodeExtractZip(input.serverName, fileName); await recordAuditEvent({ userId: ctx.user.id, action: "file.extracted", detail: `Archive extracted: ${input.fileName}`, metadata: { serverName: input.serverName, fileName } }); return result; }),
     rename: protectedProcedure
       .input(z.object({ id: z.number().int().positive(), newName: z.string().min(1).max(255) }))
       .mutation(async ({ ctx, input }) => { const file = await getStoredFile(input.id); if (!file || file.userId !== ctx.user.id) throw new TRPCError({ code: "NOT_FOUND", message: "File not found" }); await requireServerPermission(ctx, file.serverName, "file.write"); const safeName = safeFileName(input.newName); await nodeRenameFile(file.serverName, safeFileName(file.originalName), safeName); return renameStoredFile(ctx.user.id, input.id, input.newName.trim()); }),
