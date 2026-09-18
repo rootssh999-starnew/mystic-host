@@ -21,46 +21,23 @@ cp -a "$PANEL_DIR/drizzle" "$BACKUP/drizzle" 2>/dev/null || true
 cp -a "$PANEL_DIR/package.json" "$BACKUP/package.json"
 cp -a "$PANEL_DIR/pnpm-lock.yaml" "$BACKUP/pnpm-lock.yaml" 2>/dev/null || true
 
+# Stage deployable artifacts before touching the active build.
 tar -xzf "$ARCHIVE" -C "$STAGE"
 [[ -f "$STAGE/dist/index.js" ]] || { echo "Archive does not contain dist/index.js" >&2; exit 1; }
 cp -a "$STAGE/dist" "$PANEL_DIR/dist.new"
 if [[ -d "$STAGE/drizzle" ]]; then cp -a "$STAGE/drizzle/." "$PANEL_DIR/drizzle/"; fi
 if [[ -f "$STAGE/package.json" ]]; then cp -a "$STAGE/package.json" "$PANEL_DIR/package.json"; fi
 if [[ -f "$STAGE/pnpm-lock.yaml" ]]; then cp -a "$STAGE/pnpm-lock.yaml" "$PANEL_DIR/pnpm-lock.yaml"; fi
+if [[ -f "$STAGE/scripts/migration-ledger.sh" ]]; then
+  mkdir -p "$PANEL_DIR/scripts"
+  cp -a "$STAGE/scripts/migration-ledger.sh" "$PANEL_DIR/scripts/migration-ledger.sh"
+fi
 
-if [[ -f "$PANEL_DIR/drizzle/0002_mystic_host_jobs.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'jobs'" | grep -q '^jobs$'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0002_mystic_host_jobs.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0003_server_install_metadata.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM servers LIKE 'installScript'" | grep -q '^installScript'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0003_server_install_metadata.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0004_job_progress.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM jobs LIKE 'progress'" | grep -q '^progress'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0004_job_progress.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0005_api_keys.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'api_keys'" | grep -q '^api_keys$'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0005_api_keys.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0006_schedule_history.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'schedule_runs'" | grep -q '^schedule_runs$'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0006_schedule_history.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0007_invitations.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'invitations'" | grep -q '^invitations$'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0007_invitations.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0008_password_resets.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'password_resets'" | grep -q '^password_resets$'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0008_password_resets.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0009_totp.sql" ]]; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0009_totp.sql" 2>/dev/null || true
-fi
-if [[ -f "$PANEL_DIR/drizzle/0010_teams.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'teams'" | grep -q '^teams$'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0010_teams.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0011_user_disabled.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM users LIKE 'disabled'" | grep -q '^disabled'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0011_user_disabled.sql"
-fi
-if [[ -f "$PANEL_DIR/drizzle/0012_audit_events.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'audit_events'" | grep -q '^audit_events$'; then
-  mysql mystic_host < "$PANEL_DIR/drizzle/0012_audit_events.sql"
-fi
+# The ledger runs before the new service starts. Failed SQL aborts the upgrade and
+# leaves the previous build available for rollback; successful versions are recorded.
+# shellcheck source=/dev/null
+source "$PANEL_DIR/scripts/migration-ledger.sh"
+apply_migration_ledger mystic_host "$PANEL_DIR/drizzle"
 
 rm -rf "$PANEL_DIR/dist.previous"
 if [[ -d "$PANEL_DIR/dist" ]]; then mv "$PANEL_DIR/dist" "$PANEL_DIR/dist.previous"; fi

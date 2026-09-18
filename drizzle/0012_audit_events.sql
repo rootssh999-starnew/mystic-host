@@ -1,4 +1,4 @@
-CREATE TABLE `audit_events` (
+CREATE TABLE IF NOT EXISTS `audit_events` (
   `id` int NOT NULL AUTO_INCREMENT,
   `userId` int DEFAULT NULL,
   `serverId` int DEFAULT NULL,

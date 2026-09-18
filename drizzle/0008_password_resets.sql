@@ -1,2 +1,2 @@
-ALTER TABLE `users` ADD COLUMN `sessionVersion` int NOT NULL DEFAULT 0;
-CREATE TABLE `password_resets` (`id` int AUTO_INCREMENT NOT NULL, `userId` int NOT NULL, `tokenHash` varchar(128) NOT NULL, `expiresAt` timestamp NOT NULL, `usedAt` timestamp NULL, `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT `password_resets_id` PRIMARY KEY(`id`), CONSTRAINT `password_resets_tokenHash_unique` UNIQUE(`tokenHash`));
+ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `sessionVersion` int NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS `password_resets` (`id` int AUTO_INCREMENT NOT NULL, `userId` int NOT NULL, `tokenHash` varchar(128) NOT NULL, `expiresAt` timestamp NOT NULL, `usedAt` timestamp NULL, `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT `password_resets_id` PRIMARY KEY(`id`), CONSTRAINT `password_resets_tokenHash_unique` UNIQUE(`tokenHash`));

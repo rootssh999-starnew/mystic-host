@@ -1,2 +1,2 @@
-ALTER TABLE `schedules` ADD COLUMN `timezone` varchar(64) NOT NULL DEFAULT 'UTC';
-CREATE TABLE `schedule_runs` (`id` int AUTO_INCREMENT NOT NULL, `scheduleId` int NOT NULL, `status` enum('running','completed','failed') NOT NULL, `error` text, `startedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `finishedAt` timestamp NULL, CONSTRAINT `schedule_runs_id` PRIMARY KEY(`id`));
+ALTER TABLE `schedules` ADD COLUMN IF NOT EXISTS `timezone` varchar(64) NOT NULL DEFAULT 'UTC';
+CREATE TABLE IF NOT EXISTS `schedule_runs` (`id` int AUTO_INCREMENT NOT NULL, `scheduleId` int NOT NULL, `status` enum('running','completed','failed') NOT NULL, `error` text, `startedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, `finishedAt` timestamp NULL, CONSTRAINT `schedule_runs_id` PRIMARY KEY(`id`));

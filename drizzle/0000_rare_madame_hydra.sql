@@ -1,4 +1,4 @@
-CREATE TABLE `stored_files` (
+CREATE TABLE IF NOT EXISTS `stored_files` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`userId` int NOT NULL,
 	`serverName` varchar(100) NOT NULL,
@@ -13,7 +13,7 @@ CREATE TABLE `stored_files` (
 	CONSTRAINT `stored_files_storageKey_unique` UNIQUE(`storageKey`)
 );
 --> statement-breakpoint
-CREATE TABLE `users` (
+CREATE TABLE IF NOT EXISTS `users` (
 	`id` int AUTO_INCREMENT NOT NULL,
 	`openId` varchar(64) NOT NULL,
 	`name` text,
