@@ -311,6 +311,8 @@ export async function markScheduleRun(id: number) {
   await db.update(schedules).set({ lastRunAt: new Date() }).where(eq(schedules.id, id));
 }
 
+export async function updateSchedule(id: number, input: { name: string; cron: string; action: "start" | "stop" | "restart" | "command"; payload?: string | null }) { const db = await getDb(); if (!db) throw new Error("Database is not available"); await db.update(schedules).set({ name: input.name, cron: input.cron, action: input.action, payload: input.payload ?? null }).where(eq(schedules.id, id)); return (await db.select().from(schedules).where(eq(schedules.id, id)).limit(1))[0]; }
+export async function deleteSchedule(id: number) { const db = await getDb(); if (!db) throw new Error("Database is not available"); await db.delete(schedules).where(eq(schedules.id, id)); }
 export async function updateScheduleEnabled(id: number, enabled: number) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
