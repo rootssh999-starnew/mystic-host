@@ -173,6 +173,16 @@ export async function seedCatalog() {
   if (missingEggs.length) await db.insert(eggs).values(missingEggs);
 }
 
+export async function listAccessibleServers(userId: number, role: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ server: servers, allocation: allocations, node: nodes }).from(servers).leftJoin(allocations, eq(servers.allocationId, allocations.id)).leftJoin(nodes, eq(servers.nodeId, nodes.id)).orderBy(desc(servers.createdAt));
+  if (role === "admin") return rows;
+  const memberships = await db.select({ serverId: serverUsers.serverId }).from(serverUsers).where(eq(serverUsers.userId, userId));
+  const allowed = new Set(memberships.map((item) => item.serverId));
+  return rows.filter((row) => row.server.ownerId === userId || allowed.has(row.server.id));
+}
+
 export async function listServers() {
   const db = await getDb();
   if (!db) return [];
