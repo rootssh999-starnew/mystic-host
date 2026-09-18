@@ -1,7 +1,7 @@
 import { and, count, desc, eq, isNull, sql, sum } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { drizzle } from "drizzle-orm/mysql2";
-import { apiKeys, InsertStoredFile, InsertUser, invitations, passwordResets, storedFiles, users } from "../drizzle/schema";
+import { apiKeys, auditEvents, InsertStoredFile, InsertUser, invitations, passwordResets, storedFiles, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { normalizeApiScopes } from "@shared/apiScopes";
 
@@ -18,6 +18,9 @@ export async function getDb() {
   }
   return _db;
 }
+
+export async function recordAuditEvent(input: { userId?: number | null; serverId?: number | null; action: string; detail: string; metadata?: unknown }) { const database = await getDb(); if (!database) return; await database.insert(auditEvents).values({ userId: input.userId ?? null, serverId: input.serverId ?? null, action: input.action.slice(0, 120), detail: input.detail.slice(0, 500), metadataJson: input.metadata === undefined ? null : JSON.stringify(input.metadata) }); }
+export async function listAuditEvents(limit = 100) { const database = await getDb(); if (!database) return []; return database.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(Math.min(limit, 500)); }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
