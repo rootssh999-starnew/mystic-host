@@ -135,19 +135,23 @@ export const appRouter = router({
         return created;
       }),
     createServer: adminProcedure
-      .input(z.object({ nodeId: z.number().int().positive(), allocationId: z.number().int().positive().optional(), name: z.string().min(2).max(48), runtime: z.enum(["nodejs", "python", "polyglot", "bun"]), memoryMb: z.number().int().min(128).max(8192), diskMb: z.number().int().min(512).max(1048576).default(5120), cpu: z.number().min(0.1).max(4), startup: z.string().min(1).max(500).optional() }))
+      .input(z.object({ nodeId: z.number().int().positive(), allocationId: z.number().int().positive().optional(), ownerId: z.number().int().positive().optional(), name: z.string().min(2).max(48), runtime: z.enum(["nodejs", "python", "polyglot", "bun"]), memoryMb: z.number().int().min(128).max(8192), diskMb: z.number().int().min(512).max(1048576).default(5120), cpu: z.number().min(0.1).max(4), startup: z.string().min(1).max(500).optional() }))
       .mutation(async ({ ctx, input }) => {
         const image = { nodejs: "node:22-bookworm", python: "python:3.12-slim", polyglot: "python:3.12-slim", bun: "oven/bun:1" }[input.runtime];
         const node = (await listNodes()).find((item) => item.id === input.nodeId);
         if (!node) throw new TRPCError({ code: "NOT_FOUND", message: "Node not found" });
+        const ownerId = input.ownerId ?? ctx.user.id;
+        const owner = (await listUsers()).find((item) => item.id === ownerId);
+        if (!owner) throw new TRPCError({ code: "NOT_FOUND", message: "Owner not found" });
         acquireServerOperation(input.nodeId, "server-create");
         try {
-          const created = await createPersistentServer({ ownerId: ctx.user.id, nodeId: input.nodeId, allocationId: input.allocationId, name: input.name, runtime: input.runtime, image, startup: input.startup || (input.runtime === "nodejs" ? "node server.js" : input.runtime === "bun" ? "bun run start" : "python app.py"), installScript: "", variablesJson: "{}", memoryMb: input.memoryMb, diskMb: input.diskMb, cpu: Math.round(input.cpu * 100) });
+          const created = await createPersistentServer({ ownerId, nodeId: input.nodeId, allocationId: input.allocationId, name: input.name, runtime: input.runtime, image, startup: input.startup || (input.runtime === "nodejs" ? "node server.js" : input.runtime === "bun" ? "bun run start" : "python app.py"), installScript: "", variablesJson: "{}", memoryMb: input.memoryMb, diskMb: input.diskMb, cpu: Math.round(input.cpu * 100) });
           const job = await createJob({ serverId: created.id, type: "server.create", payload: { identifier: created.identifier, name: created.name, image: created.image } });
           await updateJob(job.id, { status: "running" });
           try {
             await createManagedNodeServer({ name: created.identifier, runtime: created.runtime, image: created.image, startup: created.startup, installScript: created.installScript, memoryMb: created.memoryMb, cpu: created.cpu / 100 });
             await updateServerStatus(created.id, "offline");
+            await createServerUser({ serverId: created.id, userId: ownerId, permissions: ["control", "console", "file.read", "file.write", "backup.read", "backup.create"] });
             await updateJob(job.id, { status: "completed", result: { serverId: created.id, identifier: created.identifier } });
           } catch (error) {
             await updateServerStatus(created.id, "failed");
