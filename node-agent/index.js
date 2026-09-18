@@ -175,6 +175,7 @@ async function handle(req, res) {
   if (req.method === "POST" && parts[3] === "start") { await docker(["start", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "POST" && parts[3] === "stop") { await docker(["stop", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "POST" && parts[3] === "restart") { await docker(["restart", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }
+  if (req.method === "POST" && parts[3] === "kill") { await docker(["kill", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "GET" && parts[3] === "stats") {
     let output;
     try { output = await docker(["stats", "--no-stream", "--format", "{{json .}}", container]); }

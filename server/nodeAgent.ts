@@ -37,7 +37,7 @@ export function createManagedNodeServer(input: { name: string; runtime: string; 
 export function nodeReinstallServer(input: { name: string; runtime: string; image: string; startup: string; installScript?: string; memoryMb: number; cpu: number; port?: number }) {
   return request<NodeServer & { rebuilt?: boolean }>(`/v1/servers/${encodeURIComponent(input.name)}/reinstall`, { method: "POST", body: JSON.stringify(input) });
 }
-export function nodeAction(name: string, action: "start" | "stop" | "restart") {
+export function nodeAction(name: string, action: "start" | "stop" | "restart" | "kill") {
   return request<NodeServer>(`/v1/servers/${encodeURIComponent(name)}/${action}`, { method: "POST" });
 }
 export function nodeLogs(name: string) {
