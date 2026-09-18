@@ -58,6 +58,9 @@ fi
 if [[ -f "$PANEL_DIR/drizzle/0011_user_disabled.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW COLUMNS FROM users LIKE 'disabled'" | grep -q '^disabled'; then
   mysql mystic_host < "$PANEL_DIR/drizzle/0011_user_disabled.sql"
 fi
+if [[ -f "$PANEL_DIR/drizzle/0012_audit_events.sql" ]] && ! mysql --batch --skip-column-names mystic_host -e "SHOW TABLES LIKE 'audit_events'" | grep -q '^audit_events$'; then
+  mysql mystic_host < "$PANEL_DIR/drizzle/0012_audit_events.sql"
+fi
 
 rm -rf "$PANEL_DIR/dist.previous"
 if [[ -d "$PANEL_DIR/dist" ]]; then mv "$PANEL_DIR/dist" "$PANEL_DIR/dist.previous"; fi
