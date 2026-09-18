@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createApiKey, createInvitation, createStoredFile, deleteStoredFile, getAdminOverview, getStoredFile, invalidateUserSessions, listApiKeys, listInvitations, listStoredFiles, listUsers, renameStoredFile, revokeApiKey, revokeInvitation, updateUserAdmin } from "./db";
 import { storagePut } from "./storage";
-import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeCreateFolder, nodeDeleteBackup, nodeDeleteDatabase, nodeDeleteFile, nodeDownloadFile, nodeRenameFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeLogs, nodeReinstallServer, nodeResources, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
+import { createManagedNodeServer, createNodeServer, listNodeServers, nodeAction, nodeBackups, nodeCancelInstall, nodeCommand, nodeCreateBackup, nodeCreateDatabase, nodeCreateFolder, nodeDeleteBackup, nodeDeleteDatabase, nodeDeleteFile, nodeDownloadFile, nodeRenameFile, nodeExtractZip, nodeHealth, nodeInstallStatus, nodeListFiles, nodeListDatabases, nodeLogs, nodeReinstallServer, nodeResources, nodeRestoreBackup, nodeRotateDatabasePassword, nodeStats, nodeUploadFile, nodeSftpCredentials } from "./nodeAgent";
 import { acquireServerOperation, addTeamMember, createAllocation, createBackupRecord, createDatabaseHost, createEgg, createJob, createLocation, createNest, createNode, createPersistentServer, createSchedule, createServerDatabase, createServerUser, createTeam, listAccessibleServers, deleteEgg, deleteNest, deleteServerDatabase, deleteServerUser, deleteTeamMember, getNode, getNodeCapacity, getServerDatabase, listAllocations, listBackups, listDatabaseHosts, listEggs, listJobs, listLocations, listNests, listNodeCapacities, listNodes, listScheduleRuns, listSchedules, listServerDatabases, listServerMembers, listServerUsers, listServers, listTeamMembers, listTeams, releaseServerOperation, seedCatalog, updateBackupRecord, updateEgg, updateJob, updateNest, updatePersistentServer, updateScheduleEnabled, updateNodeStatus, updateServerDatabase, updateServerStatus, updateServerUser, updateTeamMember, getServerAccess } from "./controlPlane";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -297,6 +297,15 @@ export const appRouter = router({
     sftpCredentials: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48) }))
       .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.name, "file.read"); return nodeSftpCredentials(input.name); }),
+    listDatabases: protectedProcedure
+      .input(z.object({ serverName: z.string().min(2).max(48) }))
+      .query(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.read"); return nodeListDatabases(input.serverName); }),
+    deleteDatabase: protectedProcedure
+      .input(z.object({ serverName: z.string().min(2).max(48), database: z.string().min(1).max(48) }))
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.delete"); return nodeDeleteDatabase(input.serverName, input.database); }),
+    rotateDatabasePassword: protectedProcedure
+      .input(z.object({ serverName: z.string().min(2).max(48), database: z.string().min(1).max(48), username: z.string().min(1).max(48), oldPassword: z.string().min(1).max(255), newPassword: z.string().min(12).max(255) }))
+      .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.rotate"); return nodeRotateDatabasePassword(input.serverName, input.database, input.username, input.oldPassword, input.newPassword); }),
     createDatabase: protectedProcedure
       .input(z.object({ serverName: z.string().min(2).max(48), name: z.string().min(1).max(48), username: z.string().min(1).max(48), password: z.string().min(12).max(255) }))
       .mutation(async ({ ctx, input }) => { await requireServerPermission(ctx, input.serverName, "database.create"); return nodeCreateDatabase(input.serverName, input.name, input.username, input.password); }),

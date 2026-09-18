@@ -72,6 +72,7 @@ export function nodeListFiles(name: string, relativePath?: string) {
 export function nodeDownloadFile(name: string, relativePath: string) {
   return request<{ path: string; bytes: number; dataBase64: string }>(`/v1/servers/${encodeURIComponent(name)}/files/${relativePath.split("/").map(encodeURIComponent).join("/")}`);
 }
+export function nodeListDatabases(name: string) { return request<{ databases: Array<{ name: string; container: string }> }>(`/v1/servers/${encodeURIComponent(name)}/databases`); }
 export function nodeCreateDatabase(name: string, database: string, username: string, password: string) {
   return request<{ name: string; username: string; host: string; port: number }>(`/v1/servers/${encodeURIComponent(name)}/databases`, { method: "POST", body: JSON.stringify({ name: database, username, password }) });
 }

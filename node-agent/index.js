@@ -242,6 +242,7 @@ async function handle(req, res) {
     }));
     return send(res, 200, { files });
   }
+  if (req.method === "GET" && parts[3] === "databases" && parts.length === 4) { const prefix = `mystic-host-db-${name}-`; const output = await docker(["ps", "-a", "--format", "{{.Names}}"]); const databases = output.split("\n").map((value) => value.trim()).filter((value) => value.startsWith(prefix)).map((value) => ({ name: value.slice(prefix.length), container: value })); return send(res, 200, { databases }); }
   if (req.method === "POST" && parts[3] === "databases" && parts.length === 4) {
     const database = safeName(input.name);
     const username = safeName(input.username || "app");
