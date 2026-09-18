@@ -1,5 +1,5 @@
 import "dotenv/config";
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -35,6 +35,11 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+const apiRateWindowMs = 60_000;
+const apiRateLimit = 120;
+const apiRateBuckets = new Map<string, { startedAt: number; count: number }>();
+function enforceApiRateLimit(req: Request, res: Response, next: NextFunction) { const key = req.ip || req.socket.remoteAddress || "unknown"; const now = Date.now(); const current = apiRateBuckets.get(key); if (!current || now - current.startedAt >= apiRateWindowMs) { apiRateBuckets.set(key, { startedAt: now, count: 1 }); return next(); } current.count += 1; if (current.count > apiRateLimit) { res.setHeader("Retry-After", "60"); return res.status(429).json({ error: "API rate limit exceeded; try again shortly" }); } return next(); }
+
 async function startServer() {
   startScheduler();
   const app = express();
@@ -68,6 +73,7 @@ async function startServer() {
     } catch { res.status(401).end(); }
   });
   // tRPC API
+  app.use("/api/trpc", enforceApiRateLimit);
   app.use(
     "/api/trpc",
     createExpressMiddleware({
